@@ -1,0 +1,19 @@
+请审查 strategy_runners/ 目录：
+
+1. 代码复用检查：
+   - double_ma/ 和 rsi/ 各自的 backtest.py 和 live.py 之间是否有大量重复代码？如果有，把公共部分提取到策略类本身或上层共用模块中，backtest.py 和 live.py 只负责选择运行模式和配置。
+
+2. cli.py：
+   - 命令行入口是否支持以下基本功能：
+     a. 选择策略（--strategy double_ma）
+     b. 选择模式（--mode backtest / live / paper）
+     c. 指定配置文件（--config xxx.yaml）
+   - 不完整的请补全。
+
+3. 策略逻辑审查（double_ma 和 rsi）：
+   - 信号重复：同一根 K 线是否会产生多次相同信号？
+   - 仓位管理：是否存在在已有多头持仓时又意外开空头的情况？
+   - 指标预热：数据预热期内是否会误触发信号？
+   - params.yaml 中的参数是否都在策略代码中被使用？有没有废弃参数没清理？
+
+不新增文件。

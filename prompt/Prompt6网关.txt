@@ -1,0 +1,21 @@
+请审查 gateway/ 目录，重点优化 okx/ 子目录：
+
+1. gateway/base_gateway.py：
+   - 审查基类接口是否完整：connect、disconnect、subscribe（订阅行情）、send_order、cancel_order、query_position、query_account。缺失的补上 NotImplementedError。
+
+2. gateway/okx/（重点审查）：
+   
+   REST API 方面：
+   a. 是否有统一的限频控制？OKX 对不同端点有不同频率限制，检查是否按端点区分限频。
+   b. 所有 API 调用是否有超时设置？是否正确使用了 utils/retry.py 的重试机制？
+   c. API 返回的错误码（code != "0"）是否有统一处理并转为明确异常？不能静默忽略错误。
+   
+   WebSocket 方面：
+   a. 是否有心跳机制？OKX WebSocket 超过 30 秒无消息会断连，需要定时发 ping。
+   b. 断连后是否自动重连并重新订阅之前的频道？
+   c. 消息解析是否有异常保护？一条畸形消息不应导致整个 WebSocket 循环崩溃。
+
+3. gateway/ctp/ 和 gateway/ib/：
+   - 如果这两个目前是空的或半成品，在 __init__.py 中添加说明，并确保配置中选择它们时给出明确的 NotImplementedError，而不是默默失败。
+
+不新增文件。

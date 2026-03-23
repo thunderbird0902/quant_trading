@@ -1,0 +1,56 @@
+请审查 data/ 目录。当前数据层能力较弱，需要补齐历史数据管理和本地存储能力。
+这对回测和实盘都是刚需——没有本地数据缓存，每次回测都要从交易所拉数据，
+既慢又容易触发限频。
+
+请遵循"如无必要，勿增实体"原则，用最简单可靠的方案实现。
+
+1. 本地数据存储（优先用 SQLite，不要引入 PostgreSQL/InfluxDB 等外部依赖）：
+   
+   修改 data/database.py，实现基于 SQLite 的本地 K 线数据存储，至少包含：
+   - 建表：存储 K 线数据（交易对、周期、时间戳、open、high、low、close、volume），
+     用 (symbol, interval, timestamp) 做联合主键，天然防重复。
+   - write_bars(symbol, interval, bars)：批量写入 K 线数据。
+   - read_bars(symbol, interval, start_ts, end_ts)：按时间范围查询，返回列表。
+   - get_bar_range(symbol, interval)：查询本地已有数据的起止时间戳，
+     用于判断哪些数据需要从 API 补拉。
+   
+   SQLite 文件放在项目根目录的 data/ 或 output/ 下，路径从 settings.yaml 读取。
+   不要用 ORM，直接用 sqlite3 标准库即可。
+
+2. 历史数据管理：
+
+   修改 data/data_feed.py，添加一个方法 load_history(symbol, interval, start, end)，
+   逻辑为：
+   a. 先调 database.get_bar_range() 查本地已有范围
+   b. 计算缺失的时间区间
+   c. 只对缺失部分调用 gateway 的 REST API 拉取（注意 OKX 单次最多返回 300 根 K 线，
+      需要分页循环拉取）
+   d. 拉取结果写入本地 SQLite
+   e. 最终从本地 SQLite 一次性读取完整数据返回
+   
+   这样回测时第一次会慢（需要拉取），之后就是纯本地读取，几乎秒级完成。
+
+3. data/data_recorder.py：
+   - 检查实时数据录制功能是否正常工作。如果当前这个文件功能不完善，
+     请实现：在实盘运行时，将收到的实时 K 线/Tick 数据持续写入 SQLite，
+     这样实盘运行过程中自动积累历史数据。
+   - 写入时做去重处理（SQLite 的 INSERT OR IGNORE 即可）。
+   - 写入失败不能导致主流程崩溃，用 try-except 包裹，错误记日志。
+
+4. 数据清洗（在 data_feed.py 中添加，不新建文件）：
+   - load_history 返回数据前做基本清洗：
+     a. 按时间戳排序
+     b. 去除价格为 0 或 volume 为 0 的异常条目（记日志）
+     c. 检测时间间隙（比如连续两根 1 分钟 K 线间隔 > 2 分钟），
+        记录 warning 日志但不阻断流程
+   
+   不要过度设计清洗逻辑，以上三条够用了。
+
+5. 不需要做的事（明确排除）：
+   - 不需要引入 Redis、InfluxDB、TimescaleDB 等外部数据库
+   - 不需要实现 Tick 级别的数据存储（K 线级别足够）
+   - 不需要实现数据回放（data replay）功能，回测引擎自己处理
+   - 不需要做数据可视化
+
+完成后告诉我 database.py、data_feed.py、data_recorder.py 
+分别改了什么，以及需要在 settings.yaml 中添加哪些配置项。

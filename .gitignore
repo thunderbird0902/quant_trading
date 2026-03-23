@@ -1,0 +1,23 @@
+# 敏感配置 - 永远不要提交
+.env
+*.env
+config/okx_secrets.yaml
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+*.egg-info/
+dist/
+build/
+
+# 数据库
+*.db
+*.sqlite
+
+# 日志和输出
+logs/
+output/
+*.log
+nohup.out

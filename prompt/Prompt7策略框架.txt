@@ -1,0 +1,22 @@
+请审查 strategy_core/ 目录：
+
+1. strategy_core/base_strategy.py：
+   - 策略基类的生命周期方法是否完整：on_init、on_bar、on_tick（可选）、on_order、on_trade、on_stop。缺少的补上抽象方法定义。
+   - 策略中的 buy/sell/cancel 等便捷方法，内部调用链路应该是：策略 → strategy_engine → risk_engine（风控检查）→ gateway。如果策略直接调用 gateway 绕过了风控，这是严重问题，请修正。
+
+2. strategy_core/strategy_engine.py：
+   - 是否支持同时运行多个策略实例（不同策略、不同参数、不同交易对）？
+   - 策略异常隔离：一个策略的回调抛异常不应影响其他策略，是否有 try-except 保护？
+
+3. strategy_core/bar_generator.py：
+   - K 线合成逻辑（如 1 分钟合成 5 分钟）是否正确处理了跨小时/跨天的时间边界？
+   - 加密货币 7x24 交易，确认合成逻辑没有基于"交易时段"的假设。
+
+4. strategy_core/array_manager.py：
+   - 技术指标计算（特别是 EMA、MACD 等需要预热的指标）是否有足够的预热期处理？
+   - 数据量不足时调用指标是否有保护？不应崩溃，应返回 None 或 NaN。
+
+5. strategy_core/data_utils.py：
+   - 审查工具函数的边界情况处理。
+
+不新增文件。

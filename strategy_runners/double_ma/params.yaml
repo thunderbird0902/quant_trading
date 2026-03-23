@@ -1,0 +1,46 @@
+# strategy_runners/double_ma/params.yaml
+# ============================================================
+# 双均线策略默认参数
+# 所有参数均可通过 CLI 命令行覆盖（见 backtest.py / live.py --help）
+# ============================================================
+
+strategy:
+  # ── 策略核心参数 ──────────────────────────────────────────
+  fast_period: 10         # 快均线周期
+  slow_period: 30         # 慢均线周期
+
+  # ── 仓位控制 ──────────────────────────────────────────────
+  position_pct: 0.95      # 每次开仓使用可用资金比例（0.95 = 95%）；实盘建议先用 0.05 小仓位测试
+  lot_size: 0.001         # 下单精度（BTC 现货：0.001）
+
+  # ── 行情周期 ──────────────────────────────────────────────
+  interval: "1H"          # K 线周期，与 data.interval 保持一致
+
+data:
+  inst_id: "BTC-USDT"     # 交易品种
+  interval: "1H"          # 与 strategy.interval 一致
+
+backtest:
+  capital: 100000         # 初始资金（USDT）
+  taker_fee: 0.0005       # Taker 手续费率（OKX：0.05%）
+  maker_fee: 0.0002       # Maker 手续费率（OKX：0.02%）
+  slippage: 0.0001        # 滑点比例
+  # 时间范围模式：同时指定 start_date / end_date 时按日期段拉取，优先于 data_limit
+  # 格式 YYYY-MM-DD（UTC）；注释掉或留空则退回到 data_limit 条数模式
+  start_date:             # 例：2024-01-01
+  end_date:               # 例：2024-12-31（留空表示拉到当前时间）
+  data_limit: 1000        # 拉取 K 线条数（未指定 start_date 时生效）
+  mock_days: 365          # 模拟数据天数（mock 模式；均线策略需要更长历史）
+  mock_seed: 42           # 模拟数据随机种子
+
+  # 网格搜索参数范围（--grid-search 时使用）
+  grid:
+    fast_period: [5, 10, 20]
+    slow_period: [20, 30, 60]
+
+live:
+  risk:
+    max_daily_loss_pct: 0.05      # 单日最大亏损 5%
+    max_position_pct: 0.5         # 单品种最大仓位 50%
+    max_total_position_pct: 0.9   # 总仓位上限 90%
+    max_consecutive_losses: 5     # 最大连续亏损次数

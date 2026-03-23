@@ -1,0 +1,33 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pip install:*)",
+      "Bash(pip show:*)",
+      "Bash(python3:*)",
+      "Bash(~/miniconda3/bin/python3 examples/01_connect_okx.py 2>&1)",
+      "Bash(export OKX_FLAG=0)",
+      "Bash(~/miniconda3/bin/python3 examples/01_connect_okx.py)",
+      "Read(//opt/miniconda3/**)",
+      "Read(//Users/bytedance/miniconda3/bin/**)",
+      "Read(//opt/**)",
+      "Bash(echo \"ZSHRC_EXIT:$?\")",
+      "Bash(source ~/.bash_profile)",
+      "Bash(python:*)",
+      "Bash(mv strategy:*)",
+      "Bash(mv strategy_core/examples strategy_core/impls)",
+      "Bash(mv strategies:*)",
+      "Bash(conda run:*)",
+      "Bash(conda info:*)",
+      "Bash(pip --version)",
+      "Bash(pip3 --version)",
+      "Bash(pip3 show:*)",
+      "Bash(find /Users/bytedance/vnpy/quant_trading -name *.sh -o -name run*.py -o -name main.py)",
+      "Bash(find /Users/bytedance/vnpy/quant_trading -name main.py -o -name run*.py)",
+      "Bash(/usr/bin/python3 -c \"import plotly\")",
+      "Bash(/usr/bin/python3 --version)",
+      "Bash(/usr/bin/python3 -c \"import plotly; print\\(plotly.__version__\\)\")",
+      "Read(//Users/bytedance/vnpy/**)",
+      "Bash(/Users/bytedance/miniconda3/bin/python3 -c \"import plotly; print\\('plotly', plotly.__version__, '✓'\\)\")"
+    ]
+  }
+}

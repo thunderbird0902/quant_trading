@@ -1,0 +1,16 @@
+ctp:
+  # 国内期货 CTP 配置（预留）
+  broker_id: "9999"               # 期货公司代码（9999=仿真）
+  td_address: "tcp://180.168.146.187:10101"   # 交易服务器
+  md_address: "tcp://180.168.146.187:10111"   # 行情服务器
+  app_id: "simnow_client_test"    # 仿真盘
+  auth_code: "0000000000000000"   # 仿真盘
+
+  # 账户（建议使用环境变量）
+  # 实际使用时请设置：
+  #   export CTP_USER_ID=your_user_id
+  #   export CTP_PASSWORD=your_password
+
+  # 交易设置
+  order:
+    default_offset: "open"        # open（开仓）首次使用此值，平仓时自动选择今昨仓
