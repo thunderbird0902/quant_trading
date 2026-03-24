@@ -57,7 +57,7 @@ from gateway.okx.okx_gateway import OKXGateway
 from risk.risk_engine import RiskEngine
 from strategy_core.strategy_engine import StrategyEngine
 from strategy_core.impls.double_ma_strategy import DoubleMaStrategy
-from utils.config_loader import load_okx_config
+from utils.config_loader import load_okx_config, load_settings
 from strategy_runners.cli import (
     add_live_args, add_logging_args,
     parse_log_level, load_defaults,
@@ -179,7 +179,9 @@ def main() -> None:
     okx_config = load_okx_config()
     okx_cfg    = okx_config["okx"]
 
-    engine     = MainEngine({"system": {"log_level": args.log_level}})
+    settings = load_settings()
+    settings["system"]["log_level"] = args.log_level
+    engine   = MainEngine(settings)
     gateway    = OKXGateway(engine.event_bus, okx_cfg)
     engine.add_gateway(gateway)
 
