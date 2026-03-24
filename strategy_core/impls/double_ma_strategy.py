@@ -142,13 +142,11 @@ class DoubleMaStrategy(BaseStrategy):
             self._open_order_id = None
 
     def on_trade(self, trade: TradeData) -> None:
-        """成交回报：更新 pos。"""
-        from core.enums import OrderSide
-        if trade.side == OrderSide.BUY:
-            self.pos += trade.quantity
-        else:
-            self.pos -= trade.quantity
-        self.write_log(f"成交回报 price={trade.price} qty={trade.quantity} pos={self.pos}")
+        """成交回报：仅记录日志，pos 以 on_position 为准。"""
+        self.write_log(
+            f"成交回报 price={trade.price} qty={trade.quantity} "
+            f"side={trade.side.value} order_id={trade.order_id}"
+        )
 
     def on_position(self, position: PositionData) -> None:
         """持仓更新。"""

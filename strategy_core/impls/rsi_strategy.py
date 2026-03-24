@@ -13,7 +13,7 @@ from __future__ import annotations
 from decimal import Decimal
 
 from core.enums import OrderSide, OrderStatus, OrderType
-from core.models import BarData, OrderData, TradeData
+from core.models import BarData, OrderData, PositionData, TradeData
 from strategy_core.array_manager import ArrayManager
 from strategy_core.base_strategy import BaseStrategy
 
@@ -99,7 +99,7 @@ class RsiStrategy(BaseStrategy):
             loss_pct = float(bar.close - self._entry_price) / float(self._entry_price)
             if loss_pct < -self.stop_loss_pct:
                 self.write_log(f"触发止损！亏损 {loss_pct:.2%}，市价平仓")
-                order = self.sell(price=Decimal("0"), quantity=self.pos,
+                order = self.sell(price=None, quantity=self.pos,
                                   order_type=OrderType.MARKET)
                 if order:
                     self._open_order_id = order.order_id
@@ -116,14 +116,14 @@ class RsiStrategy(BaseStrategy):
                 self.write_log("RSI 超卖，但可用资金不足，跳过")
                 return
             self.write_log(f"RSI 超卖（{rsi_val:.1f} < {self.oversold}），买入 qty={qty}")
-            order = self.buy(price=Decimal("0"), quantity=qty,
+            order = self.buy(price=None, quantity=qty,
                              order_type=OrderType.MARKET)
             if order:
                 self._open_order_id = order.order_id
 
         elif rsi_val > self.overbought and self.pos > 0:
             self.write_log(f"RSI 超买（{rsi_val:.1f} > {self.overbought}），平仓 qty={self.pos}")
-            order = self.sell(price=Decimal("0"), quantity=self.pos,
+            order = self.sell(price=None, quantity=self.pos,
                               order_type=OrderType.MARKET)
             if order:
                 self._open_order_id = order.order_id
@@ -139,11 +139,25 @@ class RsiStrategy(BaseStrategy):
             self._open_order_id = None
 
     def on_trade(self, trade: TradeData) -> None:
-        """成交回报：更新持仓和入场价"""
+        """成交回报：仅记录日志和更新入场价，pos 以 on_position 为准"""
+        self.write_log(
+            f"成交回报 price={trade.price} qty={trade.quantity} "
+            f"side={trade.side.value} order_id={trade.order_id}"
+        )
         if trade.side == OrderSide.BUY:
-            self.pos += trade.quantity
-            self._entry_price = trade.price   # 记录入场价
+            if self.pos > 0 and self._entry_price is not None:
+                total_qty = self.pos + trade.quantity
+                avg_price = (self._entry_price * self.pos + trade.price * trade.quantity) / total_qty
+                self._entry_price = avg_price
+                self.write_log(f"加仓成功，更新加权平均入场价 {avg_price}")
+            else:
+                self._entry_price = trade.price
         else:
-            self.pos -= trade.quantity
-            if self.pos <= 0:
-                self._entry_price = None      # 已平仓，清除入场价
+            if self._entry_price is not None:
+                self.write_log(f"平仓成交，入场价 {self._entry_price} 已清除")
+            self._entry_price = None
+
+    def on_position(self, position: PositionData) -> None:
+        """持仓更新：交易所权威状态"""
+        self.pos = position.quantity
+        self.write_log(f"持仓更新: pos={self.pos}")
