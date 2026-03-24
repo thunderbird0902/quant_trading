@@ -1,0 +1,35 @@
+okx:
+  # ── 账户设置 ──────────────────────────────────────────────────
+  api_key: ""
+  secret_key: ""
+  passphrase: ""
+  flag: "1"            # 1=模拟盘, 0=实盘
+
+  # ── 现货交易白名单 ────────────────────────────────────────────
+  spot_whitelist:
+    - "BTC-USDT"
+    - "ETH-USDT"
+    - "SOL-USDT"
+    - "BNB-USDT"
+
+  # ── 衍生品交易白名单 ──────────────────────────────────────────
+  swap_whitelist:
+    - "BTC-USDT-SWAP"
+    - "ETH-USDT-SWAP"
+    - "SOL-USDT-SWAP"
+
+  # ── 合约默认设置 ──────────────────────────────────────────────
+  default_leverage: 5             # 默认杠杆倍数
+  default_margin_mode: "cross"    # cross（全仓）/ isolated（逐仓）
+  default_position_mode: "net"    # net（买卖模式）/ long_short（多空模式）
+
+  # ── WebSocket 设置 ────────────────────────────────────────────
+  websocket:
+    heartbeat_interval: 25        # 心跳间隔（秒）
+    reconnect_delay: 5            # 重连等待（秒）
+    max_reconnect_delay: 60       # 最大重连等待（秒）
+
+  # ── 限价单设置 ────────────────────────────────────────────────
+  order:
+    default_type: "limit"         # limit / market
+    cancel_all_after: 0           # 倒计时全撤（秒，0=不启用）
