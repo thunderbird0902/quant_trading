@@ -52,6 +52,9 @@ class LossLimitChecker:
         self.max_single_loss_pct = Decimal(str(max_single_loss_pct))
         self.max_consecutive_losses = max_consecutive_losses
 
+        # UTC 结算窗口宽限期（秒）：OKX 结算期间暂缓重置
+        self._settlement_window_seconds: int = 60
+
         # 运行时统计
         self._total_equity: Decimal = Decimal("0")
         self._initial_equity: Decimal = Decimal("0")    # 今日开始时的权益（UTC 0 点）
@@ -59,6 +62,7 @@ class LossLimitChecker:
         self._daily_pnl: Decimal = Decimal("0")         # 今日累计已实现盈亏
         self._consecutive_losses: int = 0               # 当前连续亏损笔数
         self._is_halted: bool = False                   # 是否已触发停止交易
+        self._settlement_end_ts: datetime | None = None  # 当前结算窗口截止时间
 
         # 未实现盈亏跟踪（按持仓 key：inst_id_posside → unrealized_pnl）
         self._position_unrealized_pnl: dict[str, Decimal] = {}
@@ -68,20 +72,38 @@ class LossLimitChecker:
 
     def update_equity(self, total_equity: Decimal) -> None:
         """更新总权益（由 RiskEngine 在收到 BALANCE_UPDATED 事件时调用）。"""
-        # 新的一天（UTC 0 点）：重置日内统计
-        today = datetime.now(timezone.utc).date()
+        now = datetime.now(timezone.utc)
+        today = now.date()
+
+        # 结算窗口宽限期内暂缓重置，等待 OKX 结算完成
+        if self._settlement_end_ts is not None and now >= self._settlement_end_ts:
+            self._settlement_end_ts = None  # 窗口已过，下次调用时执行实际重置
+
+        # 新的一天（UTC 0 点）：进入结算窗口，宽限期内暂缓重置
         if today != self._today:
-            logger.info("UTC 新交易日，重置风控统计 (上日权益=%.2f)", float(self._total_equity))
-            self._today = today
-            self._daily_pnl = Decimal("0")
-            self._consecutive_losses = 0
-            self._is_halted = False
-            self._initial_equity = total_equity
+            from datetime import timedelta
+            settlement_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+            self._settlement_end_ts = settlement_start + timedelta(seconds=self._settlement_window_seconds)
+            logger.info(
+                "UTC 新日期 %s 检测到，进入结算窗口（宽限期 %ds），暂缓重置日统计",
+                today, self._settlement_window_seconds,
+            )
+        elif self._settlement_end_ts is None:
+            self._do_daily_reset(total_equity, today)
 
         if self._initial_equity == 0:
             self._initial_equity = total_equity
 
         self._total_equity = total_equity
+
+    def _do_daily_reset(self, total_equity: Decimal, today: date) -> None:
+        """执行日统计重置（供内部和测试调用）。"""
+        logger.info("UTC 新交易日，重置风控统计 (上日权益=%.2f)", float(self._total_equity))
+        self._today = today
+        self._daily_pnl = Decimal("0")
+        self._consecutive_losses = 0
+        self._is_halted = False
+        self._initial_equity = total_equity
 
     def update_unrealized_pnl(self, position: PositionData) -> None:
         """
