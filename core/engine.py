@@ -22,6 +22,7 @@ if TYPE_CHECKING:
     from gateway.base_gateway import BaseGateway
     from risk.risk_engine import RiskEngine
     from strategy_core.strategy_engine import StrategyEngine
+    from utils.telegram_notifier import TelegramNotifier
 
 logger = logging.getLogger(__name__)
 
@@ -59,7 +60,35 @@ class MainEngine:
             log_level=log_cfg.get("log_level", "INFO"),
         )
 
+        # Telegram 通知器
+        self._telegram_notifier: "TelegramNotifier | None" = None
+        self._init_telegram(self._config.get("telegram"))
+
         logger.info("MainEngine 初始化完成")
+
+    def _init_telegram(self, telegram_cfg: dict | None) -> None:
+        """初始化 Telegram 通知器。"""
+        if not telegram_cfg or not telegram_cfg.get("enabled"):
+            return
+        try:
+            from utils.telegram_notifier import TelegramNotifier
+            self._telegram_notifier = TelegramNotifier(
+                token=telegram_cfg.get("bot_token"),
+                chat_id=telegram_cfg.get("chat_id"),
+                enabled=telegram_cfg.get("enabled", True),
+                notify_trade=telegram_cfg.get("notify_trade", True),
+                notify_position=telegram_cfg.get("notify_position", True),
+                notify_risk=telegram_cfg.get("notify_risk", True),
+                notify_equity_interval=telegram_cfg.get("equity_interval", 300),
+            )
+            if self._telegram_notifier.enabled:
+                self.event_bus.subscribe(EventType.ORDER_FILLED, self._on_order_filled)
+                self.event_bus.subscribe(EventType.POSITION_UPDATED, self._on_position_updated)
+                self.event_bus.subscribe(EventType.RISK_BREACH, self._on_risk_breach)
+                self.event_bus.subscribe(EventType.RISK_ALERT, self._on_risk_alert)
+                self._telegram_notifier.send_message("🚀 *系统启动* - Telegram 通知已连接")
+        except Exception:
+            logger.exception("Telegram 通知器初始化失败")
 
     # ─────────────────────── Gateway 管理 ────────────────────────
 
@@ -266,6 +295,76 @@ class MainEngine:
         """注入策略引擎。"""
         self._strategy_engine = strategy_engine
         logger.info("策略引擎已注入")
+
+    # ─────────────────────── Telegram 事件处理 ──────────────────
+
+    def _on_order_filled(self, event: "Event") -> None:
+        """ORDER_FILLED 事件 → Telegram 推送成交信息。"""
+        if not self._telegram_notifier or not self._telegram_notifier.enabled:
+            return
+        order: OrderData = event.data
+        if order.filled_quantity <= 0:
+            return
+
+        from core.enums import OrderSide
+        side_str = order.side.value.upper()
+        is_close = order.pnl != 0
+
+        if is_close:
+            self._telegram_notifier.notify_trade_closed(
+                inst_id=order.inst_id,
+                side=side_str,
+                price=order.filled_price,
+                qty=order.filled_quantity,
+                order_id=order.order_id,
+                pnl=order.pnl,
+            )
+        else:
+            self._telegram_notifier.notify_trade_opened(
+                inst_id=order.inst_id,
+                side=side_str,
+                price=order.filled_price,
+                qty=order.filled_quantity,
+                order_id=order.order_id,
+            )
+
+    def _on_position_updated(self, event: "Event") -> None:
+        """POSITION_UPDATED 事件 → Telegram 推送持仓变化。"""
+        if not self._telegram_notifier or not self._telegram_notifier.enabled:
+            return
+        pos: PositionData = event.data
+        self._telegram_notifier.notify_position_update(
+            inst_id=pos.inst_id,
+            pos_qty=pos.quantity,
+            avg_price=pos.avg_price,
+            unrealized_pnl=pos.unrealized_pnl,
+            mark_price=pos.mark_price if hasattr(pos, "mark_price") and pos.mark_price else None,
+        )
+
+    def _on_risk_breach(self, event: "Event") -> None:
+        """RISK_BREACH 事件 → Telegram 推送紧急停止。"""
+        if not self._telegram_notifier or not self._telegram_notifier.enabled:
+            return
+        data = event.data or {}
+        from utils.telegram_notifier import NotificationLevel
+        level = NotificationLevel.CRITICAL if data.get("emergency") else NotificationLevel.ERROR
+        self._telegram_notifier.send_message(
+            f"🛑 *风控突破*\n原因: {data.get('reason', 'Unknown')}\n"
+            f"权益: {data.get('equity', 'N/A')}\n"
+            f"持仓数: {data.get('positions_count', 0)}",
+            level=level,
+        )
+
+    def _on_risk_alert(self, event: "Event") -> None:
+        """RISK_ALERT 事件 → Telegram 推送告警。"""
+        if not self._telegram_notifier or not self._telegram_notifier.enabled:
+            return
+        data = event.data or {}
+        self._telegram_notifier.notify_risk_alert(
+            rule=data.get("rule", "Unknown"),
+            reason=data.get("reason", ""),
+            action="alert",
+        )
 
     # ─────────────────────── 生命周期 ────────────────────────────
 
