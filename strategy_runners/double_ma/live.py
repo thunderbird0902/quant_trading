@@ -229,9 +229,29 @@ def main() -> None:
     signal.signal(signal.SIGINT,  _shutdown)
     signal.signal(signal.SIGTERM, _shutdown)
 
-    # ── 7. 主线程等待（事件驱动，不占 CPU）───────────────────
+    # ── 7. 主线程等待 + 健康检查 ────────────────────────────
+    _health_check_interval = 30
+    _last_health_check = time.time()
+
     while True:
         time.sleep(1)
+
+        now = time.time()
+        if now - _last_health_check < _health_check_interval:
+            continue
+        _last_health_check = now
+
+        if not gateway.is_connected():
+            logger.error("健康检查失败：Gateway 连接已断开！尝试重连...")
+            try:
+                engine.disconnect(Exchange.OKX)
+                engine.connect(Exchange.OKX)
+                if gateway.is_connected():
+                    logger.info("Gateway 重连成功")
+                else:
+                    logger.error("Gateway 重连失败，系统可能以僵尸状态运行！")
+            except Exception as exc:
+                logger.error("Gateway 重连异常: %s", exc)
 
 
 if __name__ == "__main__":
