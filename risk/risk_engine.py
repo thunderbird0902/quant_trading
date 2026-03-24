@@ -234,19 +234,21 @@ class RiskEngine:
         紧急停止所有交易活动（Kill Switch）。
 
         执行顺序：
-        a. 撤销所有 Gateway 的未完成订单
-        b. 市价平掉所有持仓
+        a. 撤销所有 Gateway 的未完成订单（撤单失败不阻断后续流程）
+        b. 市价平掉所有持仓（平仓前重新查询最新持仓量）
         c. 暂停策略引擎
-        d. 标记风控为停止状态，发布 RISK_BREACH 事件，记录详细日志
+        d. 标记风控为停止状态，发布 RISK_BREACH 事件
 
         注意：此方法幂等，重复调用安全（已 halted 时跳过 a/b/c）。
         """
+        import signal
+
         if self.loss_limit.is_halted:
             logger.warning("emergency_stop 已执行过，跳过重复调用")
             return
 
-        positions_snapshot = list(self.position_limit._positions.values())
         equity = float(self.loss_limit._total_equity)
+        positions_snapshot = list(self.position_limit._positions.values())
 
         logger.critical(
             "EMERGENCY STOP 触发 | reason=%s | equity=%.2f | "
@@ -254,64 +256,88 @@ class RiskEngine:
             reason, equity, len(positions_snapshot), float(self._peak_equity),
         )
 
-        # ── a. 撤销所有未完成订单 ─────────────────────────────────
-        for exchange, gw in self._gateways.items():
-            if not gw.is_connected():
-                continue
-            try:
-                open_orders = gw.get_open_orders(None)
-                for order in open_orders:
-                    try:
-                        gw.cancel_order(order.order_id, order.inst_id)
-                        logger.warning(
-                            "EMERGENCY STOP: 撤销订单 | exchange=%s "
-                            "order_id=%s inst=%s",
-                            exchange.value, order.order_id, order.inst_id,
-                        )
-                    except Exception:
-                        logger.exception(
-                            "EMERGENCY STOP: 撤单失败 | exchange=%s order_id=%s",
-                            exchange.value, order.order_id,
-                        )
-            except Exception:
-                logger.exception(
-                    "EMERGENCY STOP: 获取未完成订单失败 | exchange=%s", exchange.value
-                )
+        _timeout = 10
 
-        # ── b. 市价平掉所有持仓 ───────────────────────────────────
-        for pos in positions_snapshot:
-            if pos.quantity <= 0:
-                continue
-            gw = self._gateways.get(pos.exchange)
-            if not gw or not gw.is_connected():
-                logger.warning(
-                    "EMERGENCY STOP: 无法平仓（Gateway 未连接）| inst=%s", pos.inst_id
-                )
-                continue
-            try:
-                close_side = (
-                    OrderSide.SELL
-                    if pos.position_side == PositionSide.LONG
-                    else OrderSide.BUY
-                )
-                close_req = OrderRequest(
-                    inst_id=pos.inst_id,
-                    exchange=pos.exchange,
-                    side=close_side,
-                    order_type=OrderType.MARKET,
-                    quantity=pos.quantity,
-                    margin_mode=pos.margin_mode,
-                    position_side=pos.position_side,
-                )
-                gw.send_order(close_req)
-                logger.warning(
-                    "EMERGENCY STOP: 市价平仓 | inst=%s side=%s qty=%s",
-                    pos.inst_id, close_side.value, pos.quantity,
-                )
-            except Exception:
-                logger.exception(
-                    "EMERGENCY STOP: 市价平仓失败 | inst=%s", pos.inst_id
-                )
+        def _timeout_handler(signum, frame):
+            raise TimeoutError("emergency_stop 超时退出")
+
+        old_handler = signal.signal(signal.SIGALRM, _timeout_handler)
+        signal.alarm(_timeout)
+
+        try:
+            # ── a. 撤销所有未完成订单（失败不阻断）──────────────────
+            for exchange, gw in self._gateways.items():
+                if not gw.is_connected():
+                    continue
+                try:
+                    open_orders = gw.get_open_orders(None)
+                    for order in open_orders:
+                        try:
+                            gw.cancel_order(order.order_id, order.inst_id)
+                            logger.warning(
+                                "EMERGENCY STOP: 撤销订单 | exchange=%s "
+                                "order_id=%s inst=%s",
+                                exchange.value, order.order_id, order.inst_id,
+                            )
+                        except Exception:
+                            logger.warning(
+                                "EMERGENCY STOP: 撤单失败（不阻断）| exchange=%s "
+                                "order_id=%s reason=%s",
+                                exchange.value, order.order_id, exc_info=True,
+                            )
+                except Exception:
+                    logger.warning(
+                        "EMERGENCY STOP: 获取未完成订单失败（不阻断）| exchange=%s",
+                        exchange.value, exc_info=True,
+                    )
+
+            # ── b. 市价平掉所有持仓（平仓前重新查询）────────────────
+            for pos in positions_snapshot:
+                if pos.quantity <= 0:
+                    continue
+                gw = self._gateways.get(pos.exchange)
+                if not gw or not gw.is_connected():
+                    logger.warning(
+                        "EMERGENCY STOP: 无法平仓（Gateway 未连接）| inst=%s", pos.inst_id
+                    )
+                    continue
+                try:
+                    current_positions = gw.get_positions(pos.inst_id)
+                    current_pos = next(
+                        (p for p in current_positions if p.inst_id == pos.inst_id),
+                        None,
+                    )
+                    if not current_pos or current_pos.quantity <= 0:
+                        logger.warning(
+                            "EMERGENCY STOP: 持仓已清零，跳过平仓 | inst=%s", pos.inst_id
+                        )
+                        continue
+                    close_side = (
+                        OrderSide.SELL
+                        if current_pos.position_side == PositionSide.LONG
+                        else OrderSide.BUY
+                    )
+                    close_req = OrderRequest(
+                        inst_id=pos.inst_id,
+                        exchange=pos.exchange,
+                        side=close_side,
+                        order_type=OrderType.MARKET,
+                        quantity=current_pos.quantity,
+                        margin_mode=current_pos.margin_mode,
+                        position_side=current_pos.position_side,
+                    )
+                    gw.send_order(close_req)
+                    logger.warning(
+                        "EMERGENCY STOP: 市价平仓 | inst=%s side=%s qty=%s",
+                        pos.inst_id, close_side.value, current_pos.quantity,
+                    )
+                except Exception:
+                    logger.exception(
+                        "EMERGENCY STOP: 市价平仓失败 | inst=%s", pos.inst_id
+                    )
+        finally:
+            signal.alarm(0)
+            signal.signal(signal.SIGALRM, old_handler)
 
         # ── c. 暂停策略引擎 ───────────────────────────────────────
         if self._strategy_engine:
