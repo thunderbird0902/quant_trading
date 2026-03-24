@@ -38,25 +38,34 @@ class DataFeed:
     """
     历史数据加载器。
 
-    两种数据来源：
-    1. 数据库（优先）：本地已录制的 K 线
-    2. API 下载（缺失时自动补充）：调用 Gateway REST API 下载并入库
+    三种数据来源：
+    1. 录制数据（优先）：实盘 WebSocket 录制的 K 线，与实盘完全一致
+    2. 数据库（次优）：本地已录制的 K 线
+    3. REST API 下载（兜底）：调用 Gateway REST API 下载并入库
 
     使用示例：
+        # 方式1：从录制数据加载（推荐，保证回测-实盘数据一致）
+        feed = DataFeed.from_recorded_data("data/recorded.db", "BTC-USDT-SWAP", "1H")
+        bars = feed.load_history(...)
+
+        # 方式2：从 REST API 加载（可能有微小差异）
+        feed = DataFeed.from_okx_rest("BTC-USDT-SWAP", "1H", start, end, gateway)
+
+        # 方式3：混用（默认）
         feed = DataFeed(db, gateway)
-        bars = feed.load_history("BTC-USDT", "1H",
-                                  start=datetime(2025, 1, 1),
-                                  end=datetime(2025, 3, 1))
+        bars = feed.load_history("BTC-USDT-SWAP", "1H", start, end)
     """
 
-    def __init__(self, database: Database, gateway: "BaseGateway | None" = None):
+    def __init__(self, database: Database, gateway: "BaseGateway | None" = None, source: str = "mixed"):
         """
         Args:
             database: 数据库实例
             gateway:  可选的 Gateway 实例（用于 API 下载功能）
+            source:   数据来源标记 "recorded" | "rest" | "mixed"
         """
         self.db = database
         self.gateway = gateway
+        self.source = source
 
     # ─────────────────────── 主接口 ──────────────────────────────
 
@@ -323,6 +332,82 @@ class DataFeed:
                     )
 
         return clean
+
+    # ─────────────────────── 工厂方法 ────────────────────────────
+
+    @classmethod
+    def from_recorded_data(
+        cls,
+        db_path: str,
+        symbol: str,
+        interval: str,
+        exchange: str = "OKX",
+    ) -> "DataFeed":
+        """
+        从实盘录制的 SQLite 数据加载，保证回测-实盘数据完全一致。
+
+        推荐工作流：
+            实盘运行：DataRecorder 录制 WebSocket K 线 → SQLite
+                          ↓
+            回测回放：DataFeed.from_recorded_data() → BacktestEngine
+
+        Args:
+            db_path:   SQLite 数据库路径
+            symbol:    产品 ID（如 "BTC-USDT-SWAP"）
+            interval:  K 线周期
+            exchange:  交易所（默认 OKX）
+
+        Returns:
+            DataFeed 实例，仅从本地数据库读取
+
+        示例：
+            feed = DataFeed.from_recorded_data(
+                "data/recorded.db", "BTC-USDT-SWAP", "1H"
+            )
+            bars = feed.load_history(...)
+        """
+        database = Database(db_path)
+        feed = cls(database=database, gateway=None, source="recorded")
+        logger.info("DataFeed 从录制数据加载 | db=%s symbol=%s interval=%s", db_path, symbol, interval)
+        return feed
+
+    @classmethod
+    def from_okx_rest(
+        cls,
+        symbol: str,
+        interval: str,
+        start: datetime,
+        end: datetime | None,
+        gateway: "BaseGateway",
+    ) -> "DataFeed":
+        """
+        从 OKX REST API 加载历史 K 线（作为 fallback）。
+
+        注意：REST API 数据与 WebSocket 数据可能有微小差异，
+        建议优先使用 from_recorded_data()。
+
+        Args:
+            symbol:   产品 ID
+            interval: K 线周期
+            start:    开始时间（UTC）
+            end:      结束时间（UTC），None 表示当前时间
+            gateway:  Gateway 实例（需支持 get_history_klines）
+
+        Returns:
+            DataFeed 实例
+
+        示例：
+            feed = DataFeed.from_okx_rest(
+                "BTC-USDT-SWAP", "1H",
+                start=datetime(2025, 1, 1),
+                end=datetime(2025, 3, 1),
+                gateway=gateway,
+            )
+            bars = feed.load_history(...)
+        """
+        feed = cls(database=gateway.database if hasattr(gateway, "database") else Database(), gateway=gateway, source="rest")
+        logger.info("DataFeed 从 REST API 加载 | symbol=%s interval=%s", symbol, interval)
+        return feed
 
 
 # ─────────────────────── 工具函数 ────────────────────────────
