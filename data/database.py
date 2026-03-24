@@ -132,12 +132,20 @@ class Database:
 
     # ─────────────────────── K 线 ────────────────────────────────
 
-    def save_bar(self, bar) -> None:
-        """保存单根 K 线（重复则忽略）。"""
+    def save_bar(self, bar, upsert: bool = False) -> None:
+        """
+        保存单根 K 线。
+
+        Args:
+            bar:    BarData 对象
+            upsert: True=用 INSERT OR REPLACE（WebSocket 推送时用，更新未完成 K 线）
+                    False=用 INSERT OR IGNORE（默认，离线数据用，避免重复覆盖）
+        """
+        sql = "INSERT OR REPLACE INTO bar_data" if upsert else "INSERT OR IGNORE INTO bar_data"
         with self._conn() as conn:
             conn.execute(
-                """
-                INSERT OR IGNORE INTO bar_data
+                f"""
+                {sql}
                 (inst_id, exchange, interval, timestamp, open, high, low, close, volume, volume_ccy)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
@@ -154,6 +162,37 @@ class Database:
                     str(bar.volume_ccy),
                 ),
             )
+
+    def save_bars(self, bars: list, upsert: bool = False) -> int:
+        """
+        批量保存 K 线，返回实际插入行数。
+
+        Args:
+            bars:   BarData 列表
+            upsert: True=用 INSERT OR REPLACE（WebSocket 推送时用）
+                    False=用 INSERT OR IGNORE（默认）
+        """
+        if not bars:
+            return 0
+        sql = "INSERT OR REPLACE INTO bar_data" if upsert else "INSERT OR IGNORE INTO bar_data"
+        with self._conn() as conn:
+            params = [
+                (
+                    b.inst_id, b.exchange.value, b.interval, b.timestamp,
+                    str(b.open), str(b.high), str(b.low), str(b.close),
+                    str(b.volume), str(b.volume_ccy),
+                )
+                for b in bars
+            ]
+            result = conn.executemany(
+                f"""
+                {sql}
+                (inst_id, exchange, interval, timestamp, open, high, low, close, volume, volume_ccy)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                params,
+            )
+            return result.rowcount
 
     def save_bars(self, bars: list) -> int:
         """批量保存 K 线，返回实际插入行数。"""
