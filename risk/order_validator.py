@@ -58,7 +58,9 @@ class OrderValidator:
             positions:     当前持仓列表（用于方向合理性检查，None 时跳过）
         """
         self._check_quantity(request, instrument)
-        if request.order_type != OrderType.MARKET and request.price is not None:
+        if request.order_type == OrderType.MARKET:
+            return
+        if request.price is not None:
             self._check_price(request, instrument, current_price)
         if not self.hedge_mode and positions is not None:
             self._check_direction(request, positions)
