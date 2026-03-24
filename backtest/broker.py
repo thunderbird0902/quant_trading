@@ -10,13 +10,15 @@
   [P2-3] order.pnl 改为净利润（含开平两端手续费），修正胜率/盈亏比统计
   [P2-4] get_balance() total_equity 改为实时计算而非上一次快照
   [P2-5] 开空注释修正：frozen_margin 只记录保证金，不含手续费
+  [P2-6] 动态费率模型：支持成交量阶梯费率
 """
 
 from __future__ import annotations
 
 import logging
 import uuid
-from datetime import datetime, timezone
+from dataclasses import dataclass
+from datetime import datetime, timezone, timedelta
 from decimal import Decimal
 from typing import Callable
 
@@ -27,6 +29,47 @@ from core.models import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class FeeTier:
+    """费率阶梯"""
+    volume_threshold: Decimal
+    taker_fee: Decimal
+    maker_fee: Decimal
+
+
+class FeeSchedule:
+    """
+    动态费率表，根据 30 日成交量确定费率阶梯。
+
+    OKX 费率示例（实际费率以 OKX 官方为准）：
+      - 普通用户：taker 0.06%, maker 0.04%
+      - VIP1（30 日交易量 > 1000万 USDT）：taker 0.05%, maker 0.03%
+      - VIP3（30 日交易量 > 5亿 USDT）：taker 0.02%, maker 0.01%
+    """
+
+    def __init__(self, tiers: list[FeeTier] | None = None):
+        if tiers is None:
+            tiers = [
+                FeeTier(Decimal("0"), Decimal("0.0006"), Decimal("0.0004")),
+                FeeTier(Decimal("10_000_000"), Decimal("0.0005"), Decimal("0.0003")),
+                FeeTier(Decimal("100_000_000"), Decimal("0.0003"), Decimal("0.0002")),
+                FeeTier(Decimal("500_000_000"), Decimal("0.0002"), Decimal("0.0001")),
+            ]
+        self.tiers = sorted(tiers, key=lambda t: t.volume_threshold, reverse=True)
+
+    def get_rate(self, volume_30d: Decimal, is_maker: bool) -> tuple[Decimal, Decimal]:
+        """
+        根据 30 日成交量获取费率。
+
+        Returns:
+            (taker_fee, maker_fee)
+        """
+        for tier in self.tiers:
+            if volume_30d >= tier.volume_threshold:
+                return tier.taker_fee, tier.maker_fee
+        return self.tiers[-1].taker_fee, self.tiers[-1].maker_fee
 
 
 class SimulatedBroker:
@@ -56,16 +99,17 @@ class SimulatedBroker:
     def __init__(
         self,
         initial_capital: Decimal,
-        taker_fee: Decimal = Decimal("0.0005"),
-        maker_fee: Decimal = Decimal("0.0002"),
+        fee_schedule: FeeSchedule | None = None,
         slippage_pct: Decimal = Decimal("0"),
         exchange: Exchange = Exchange.OKX,
     ):
         self.initial_capital = initial_capital
-        self.taker_fee = taker_fee
-        self.maker_fee = maker_fee
         self.slippage_pct = slippage_pct
         self.exchange = exchange
+        self._fee_schedule = fee_schedule or FeeSchedule()
+
+        self._volume_30d: Decimal = Decimal("0")
+        self._trade_values_30d: list[tuple[datetime, Decimal]] = []
 
         # 账户状态
         self._cash: Decimal = initial_capital
@@ -176,14 +220,15 @@ class SimulatedBroker:
         ts = self._current_timestamp
 
         # ── 估算价格 ────────────────────────────────────────────
+        is_maker = request.order_type == OrderType.LIMIT
         if request.order_type == OrderType.MARKET:
             est_price = self._get_latest_mark_price(request.inst_id)
             if est_price is None or est_price == Decimal("0"):
                 est_price = Decimal("0")  # 首次交易前无标记价，跳过检查
-            fee_rate = self.taker_fee
+            fee_rate = self._get_fee_rate(is_maker=False)
         else:
             est_price = request.price or Decimal("0")
-            fee_rate = self.maker_fee
+            fee_rate = self._get_fee_rate(is_maker=True)
 
         # ── 资金检查 ────────────────────────────────────────────
         if est_price > Decimal("0"):
@@ -342,6 +387,20 @@ class SimulatedBroker:
             return pos_info["mark_price"]
         return None
 
+    def _get_fee_rate(self, is_maker: bool) -> Decimal:
+        """根据 30 日成交量获取当前费率"""
+        taker, maker = self._fee_schedule.get_rate(self._volume_30d, is_maker)
+        return maker if is_maker else taker
+
+    def _update_volume_30d(self, trade_value: Decimal, ts: datetime) -> None:
+        """更新 30 日成交量记录，自动清除超过 30 天的记录"""
+        cutoff = ts - timedelta(days=30)
+        self._trade_values_30d = [
+            (t, v) for t, v in self._trade_values_30d if t > cutoff
+        ]
+        self._trade_values_30d.append((ts, trade_value))
+        self._volume_30d = sum(v for _, v in self._trade_values_30d)
+
     def _execute_fill(
         self, order: OrderData, fill_price: Decimal, ts: datetime
     ) -> TradeData:
@@ -360,7 +419,7 @@ class SimulatedBroker:
         """
         qty = order.quantity
         is_maker = order.order_type == OrderType.LIMIT
-        fee_rate = self.maker_fee if is_maker else self.taker_fee
+        fee_rate = self._get_fee_rate(is_maker)
         fee = fill_price * qty * fee_rate
 
         pnl = Decimal("0")
@@ -487,6 +546,7 @@ class SimulatedBroker:
             timestamp=ts,
         )
         self._trades.append(trade)
+        self._update_volume_30d(fill_price * qty, ts)
 
         if self.on_trade:
             self.on_trade(trade)
@@ -618,7 +678,8 @@ class SimulatedBroker:
         avg_price = pos_info["avg_price"]
         frozen_margin = pos_info.get("frozen_margin", Decimal("0"))
 
-        fee = close_price * abs(qty) * self.taker_fee
+        taker_fee = self._get_fee_rate(is_maker=False)
+        fee = close_price * abs(qty) * taker_fee
 
         if qty > 0:
             side = OrderSide.SELL
@@ -634,7 +695,7 @@ class SimulatedBroker:
         self._cash -= fee
 
         # 净利润 = 毛利润 - 平仓手续费 - 等比例开仓手续费
-        open_fee = avg_price * abs(qty) * self.taker_fee
+        open_fee = avg_price * abs(qty) * taker_fee
         pnl_net = pnl_gross - fee - open_fee
 
         pos_info["realized_pnl"] = pos_info.get("realized_pnl", Decimal("0")) + pnl_net
