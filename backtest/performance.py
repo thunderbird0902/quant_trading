@@ -83,9 +83,8 @@ class PerformanceAnalyzer:
         annual_return = self._annualize_return(total_return, duration_days)
 
         # ── 回撤指标 ──────────────────────────────────────────────
-        max_dd, max_dd_duration = self._max_drawdown(equities, timestamps)
-        peak_equity = max(equities) if equities else init
-        max_dd_amount = max_dd * peak_equity   # 回撤金额（USDT）
+        max_dd, max_dd_duration, peak_at_max_dd = self._max_drawdown(equities, timestamps)
+        max_dd_amount = max_dd * peak_at_max_dd   # 回撤金额（USDT）
 
         # ── 波动率 / 夏普比率 ─────────────────────────────────────
         returns = self._period_returns(equities)
@@ -249,21 +248,23 @@ class PerformanceAnalyzer:
 
     def _max_drawdown(
         self, equities: list[float], timestamps: list[datetime]
-    ) -> tuple[float, float]:
+    ) -> tuple[float, float, float]:
         """
         计算最大回撤及其持续时间（天）。
 
         Returns:
-            (max_drawdown, duration_days)
+            (max_drawdown, duration_days, peak_at_max_dd)
             max_drawdown 为正数（如 0.15 表示 15% 回撤）
+            peak_at_max_dd 为最大回撤对应的峰值（用于计算回撤金额）
         """
         if not equities:
-            return 0.0, 0.0
+            return 0.0, 0.0, float(equities[0]) if equities else 0.0
 
         peak = equities[0]
         peak_ts = timestamps[0]
         max_dd = 0.0
         max_dd_duration = 0.0
+        peak_at_max_dd = peak
 
         for equity, ts in zip(equities, timestamps):
             if equity > peak:
@@ -273,8 +274,9 @@ class PerformanceAnalyzer:
             if dd > max_dd:
                 max_dd = dd
                 max_dd_duration = (ts - peak_ts).total_seconds() / 86400
+                peak_at_max_dd = peak
 
-        return max_dd, max_dd_duration
+        return max_dd, max_dd_duration, peak_at_max_dd
 
     def _trade_statistics(self) -> dict:
         """
