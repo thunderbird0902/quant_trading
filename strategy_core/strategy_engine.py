@@ -264,7 +264,7 @@ class StrategyEngine:
         self,
         strategy: "BaseStrategy",
         inst_id: str,
-        price: Decimal,
+        price: Decimal | None,
         quantity: Decimal,
         order_type: OrderType,
     ) -> OrderData | None:
@@ -276,7 +276,7 @@ class StrategyEngine:
         self,
         strategy: "BaseStrategy",
         inst_id: str,
-        price: Decimal,
+        price: Decimal | None,
         quantity: Decimal,
         order_type: OrderType,
     ) -> OrderData | None:
@@ -284,7 +284,7 @@ class StrategyEngine:
         request = self._make_request(strategy, inst_id, OrderSide.SELL, price, quantity, order_type)
         return self._send(request)
 
-    def _short(self, strategy, inst_id, price, quantity, order_type):
+    def _short(self, strategy, inst_id, price: Decimal | None, quantity, order_type):
         """做空（合约空头开仓）。"""
         request = self._make_request(
             strategy, inst_id, OrderSide.SELL, price, quantity, order_type,
@@ -292,7 +292,7 @@ class StrategyEngine:
         )
         return self._send(request)
 
-    def _cover(self, strategy, inst_id, price, quantity, order_type):
+    def _cover(self, strategy, inst_id, price: Decimal | None, quantity, order_type):
         """平空（合约空头平仓）。"""
         request = self._make_request(
             strategy, inst_id, OrderSide.BUY, price, quantity, order_type,
@@ -300,7 +300,7 @@ class StrategyEngine:
         )
         return self._send(request)
 
-    def _close_long(self, strategy, inst_id, price, quantity, order_type):
+    def _close_long(self, strategy, inst_id, price: Decimal | None, quantity, order_type):
         """
         FIX: [新增] 平多仓（OKX hedge 模式：side=sell, posSide=long）。
         原 sell() 不设 posSide，在双向持仓模式下会被 OKX 拒绝。
@@ -311,7 +311,7 @@ class StrategyEngine:
         )
         return self._send(request)
 
-    def _close_short(self, strategy, inst_id, price, quantity, order_type):
+    def _close_short(self, strategy, inst_id, price: Decimal | None, quantity, order_type):
         """
         FIX: [新增] 平空仓（OKX hedge 模式：side=buy, posSide=short）。
         与 cover() 等价，提供语义更明确的别名。

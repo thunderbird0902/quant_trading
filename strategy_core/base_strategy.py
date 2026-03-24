@@ -91,7 +91,7 @@ class BaseStrategy(ABC):
 
     def buy(
         self,
-        price: Decimal,
+        price: Decimal | None,
         quantity: Decimal,
         order_type: OrderType = OrderType.LIMIT,
         inst_id: str | None = None,
@@ -100,7 +100,7 @@ class BaseStrategy(ABC):
         买入开仓（现货买入 / 合约多头开仓）。
 
         Args:
-            price:      委托价格
+            price:      委托价格，None 表示市价单
             quantity:   委托数量
             order_type: 订单类型
             inst_id:    产品 ID，None 时使用 self.inst_id
@@ -115,7 +115,7 @@ class BaseStrategy(ABC):
 
     def sell(
         self,
-        price: Decimal,
+        price: Decimal | None,
         quantity: Decimal,
         order_type: OrderType = OrderType.LIMIT,
         inst_id: str | None = None,
@@ -128,7 +128,7 @@ class BaseStrategy(ABC):
 
     def short(
         self,
-        price: Decimal,
+        price: Decimal | None,
         quantity: Decimal,
         order_type: OrderType = OrderType.LIMIT,
         inst_id: str | None = None,
@@ -140,7 +140,7 @@ class BaseStrategy(ABC):
 
     def cover(
         self,
-        price: Decimal,
+        price: Decimal | None,
         quantity: Decimal,
         order_type: OrderType = OrderType.LIMIT,
         inst_id: str | None = None,
@@ -152,7 +152,7 @@ class BaseStrategy(ABC):
 
     def close_long(
         self,
-        price: Decimal,
+        price: Decimal | None,
         quantity: Decimal,
         order_type: OrderType = OrderType.LIMIT,
         inst_id: str | None = None,
@@ -173,7 +173,7 @@ class BaseStrategy(ABC):
 
     def close_short(
         self,
-        price: Decimal,
+        price: Decimal | None,
         quantity: Decimal,
         order_type: OrderType = OrderType.LIMIT,
         inst_id: str | None = None,
