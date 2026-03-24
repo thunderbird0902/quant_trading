@@ -20,7 +20,7 @@ from core.models import (
     BalanceData, BarData, OrderData, OrderRequest,
     PositionData, TickData, TradeData,
 )
-from backtest.broker import SimulatedBroker
+from backtest.broker import FeeSchedule, FeeTier, SimulatedBroker
 from backtest.performance import PerformanceAnalyzer
 from strategy_core.base_strategy import BaseStrategy
 
@@ -96,7 +96,7 @@ class _BacktestStrategyEngine:
             exchange=self._exchange,
             side=side,
             order_type=order_type,
-            price=price if order_type == OrderType.LIMIT else None,
+            price=price if order_type != OrderType.MARKET else None,
             quantity=qty,
             margin_mode=MarginMode.CASH,
             position_side=PositionSide.NET,
@@ -192,10 +192,12 @@ class BacktestEngine:
             self._interval_seconds = 3600
 
         # Broker
+        fee_schedule = FeeSchedule([
+            FeeTier(Decimal("0"), taker_fee, maker_fee),
+        ])
         self.broker = SimulatedBroker(
             initial_capital=initial_capital,
-            taker_fee=taker_fee,
-            maker_fee=maker_fee,
+            fee_schedule=fee_schedule,
             slippage_pct=slippage_pct,
             exchange=exchange,
         )
