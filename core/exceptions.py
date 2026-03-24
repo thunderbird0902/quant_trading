@@ -15,8 +15,8 @@ class GatewayError(QuantTradingError):
     pass
 
 
-class ConnectionError(GatewayError):
-    """连接失败"""
+class GatewayConnectionError(GatewayError):
+    """网关连接失败"""
     pass
 
 

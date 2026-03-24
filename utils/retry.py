@@ -96,11 +96,11 @@ def retry_on_network_error(max_attempts: int = 3, delay: float = 1.0):
     """
     快捷装饰器：仅对网络相关错误重试。
 
-    捕获 NetworkError / ConnectionError / TimeoutError。
+    捕获 NetworkError / GatewayConnectionError / TimeoutError。
     """
-    from core.exceptions import NetworkError as QuantNetworkError
+    from core.exceptions import NetworkError as QuantNetworkError, GatewayConnectionError
     return retry(
         max_attempts=max_attempts,
         delay=delay,
-        exceptions=(QuantNetworkError, ConnectionError, TimeoutError, OSError),
+        exceptions=(QuantNetworkError, GatewayConnectionError, TimeoutError, OSError),
     )
