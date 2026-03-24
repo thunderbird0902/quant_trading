@@ -51,7 +51,7 @@ class BaseStrategy(ABC):
 
         self.active = False         # 策略运行中
         self.trading = True         # 是否允许下单（风控可设为 False）
-        self.pos: Decimal = Decimal("0")   # 当前仓位（正=多头，负=空头）
+        self.pos: Decimal = Decimal("0")   # 当前净仓位（正=多头，负=空头）
         self.logger = logging.getLogger(f"strategy.{name}")
 
     # ─────────────────────── 抽象事件回调（子类必须实现）──────────

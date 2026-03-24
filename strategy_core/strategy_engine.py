@@ -353,7 +353,7 @@ class StrategyEngine:
         strategy: "BaseStrategy",
         inst_id: str,
         side: OrderSide,
-        price: Decimal,
+        price: Decimal | None,
         quantity: Decimal,
         order_type: OrderType,
         position_side: PositionSide | None = None,
