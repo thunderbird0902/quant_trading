@@ -184,7 +184,7 @@ class RiskEngine:
                 self.position_limit.check(request, current_price)
 
                 # ④ 亏损限额检查（成本最高，最后检查）
-                self.loss_limit.check(request, current_price)
+                self.loss_limit.check(request, current_price, current_positions)
 
             except RiskError as e:
                 rule_name = type(e).__name__
@@ -427,11 +427,11 @@ class RiskEngine:
         order: OrderData = event.data
         pnl = order.pnl
 
-        # 构造简化的 TradeData 用于 loss_limit 更新
         from core.models import TradeData as TD
         from utils.helpers import now_utc
+        import uuid
         trade = TD(
-            trade_id="",
+            trade_id=f"RT-{uuid.uuid4().hex[:12].upper()}",
             order_id=order.order_id,
             inst_id=order.inst_id,
             exchange=order.exchange,

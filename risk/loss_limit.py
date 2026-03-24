@@ -75,11 +75,9 @@ class LossLimitChecker:
         now = datetime.now(timezone.utc)
         today = now.date()
 
-        # 结算窗口宽限期内暂缓重置，等待 OKX 结算完成
         if self._settlement_end_ts is not None and now >= self._settlement_end_ts:
-            self._settlement_end_ts = None  # 窗口已过，下次调用时执行实际重置
+            self._settlement_end_ts = None
 
-        # 新的一天（UTC 0 点）：进入结算窗口，宽限期内暂缓重置
         if today != self._today:
             from datetime import timedelta
             settlement_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
@@ -177,7 +175,12 @@ class LossLimitChecker:
 
     # ─────────────────────── 检查 ────────────────────────────────
 
-    def check(self, request: OrderRequest, current_price: Decimal | None = None) -> None:
+    def check(
+        self,
+        request: OrderRequest,
+        current_price: Decimal | None = None,
+        positions: list | None = None,
+    ) -> None:
         """
         下单前检查亏损限额。
 
@@ -188,10 +191,11 @@ class LossLimitChecker:
         Args:
             request:       下单请求
             current_price: 当前价格（用于估算单笔最大亏损）
+            positions:     当前持仓列表（用于判断 NET 模式下是否为减仓订单）
         """
         # 已触发停止：区分开仓和平仓
         if self._is_halted:
-            if self._is_reducing_order(request):
+            if self._is_reducing_order(request, positions):
                 logger.info(
                     "风控已停止，允许平仓/减仓订单通过 | "
                     "inst=%s side=%s pos_side=%s qty=%s",
@@ -236,24 +240,39 @@ class LossLimitChecker:
                     f"({float(self.max_single_loss_pct):.1%} × 总权益)"
                 )
 
-    def _is_reducing_order(self, request: OrderRequest) -> bool:
+    def _is_reducing_order(
+        self, request: OrderRequest, positions: list | None = None
+    ) -> bool:
         """
         判断是否为减仓/平仓方向的订单。
 
         判断规则（基于 OKX 双仓模式）：
         - SELL + LONG 持仓方向 → 平多头（减仓）
         - BUY  + SHORT 持仓方向 → 平空头（减仓）
-        - NET 仓位模式（position_side=None）无法判断，保守处理为非减仓
+        - NET 仓位模式（position_side=None）：根据当前实际持仓判断
+          - 有多头时 SELL → 减仓
+          - 有空头时 BUY → 减仓
 
         注意：本函数只判断「方向意图」，不验证实际持仓是否存在。
         """
-        if request.position_side is None:
+        # 双向持仓模式：直接根据 pos_side 判断
+        if request.position_side is not None:
+            pos_side = request.position_side
+            side = request.side
+            return (
+                (pos_side == PositionSide.LONG  and side == OrderSide.SELL) or
+                (pos_side == PositionSide.SHORT and side == OrderSide.BUY)
+            )
+
+        # NET 模式：根据当前持仓方向判断
+        if positions is None:
             return False
-        pos_side = request.position_side
-        side = request.side
-        return (
-            (pos_side == PositionSide.LONG  and side == OrderSide.SELL) or
-            (pos_side == PositionSide.SHORT and side == OrderSide.BUY)
+        inst_positions = [p for p in positions if p.inst_id == request.inst_id]
+        has_long = any(p.quantity > 0 for p in inst_positions)
+        has_short = any(p.quantity < 0 for p in inst_positions)
+        # SELL 平多头，或 BUY 平空头
+        return (request.side == OrderSide.SELL and has_long) or (
+            request.side == OrderSide.BUY and has_short
         )
 
     # ─────────────────────── 状态查询 ────────────────────────────

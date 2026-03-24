@@ -98,15 +98,25 @@ class RsiStrategy(BaseStrategy):
         if self.pos > 0 and self._entry_price:
             loss_pct = float(bar.close - self._entry_price) / float(self._entry_price)
             if loss_pct < -self.stop_loss_pct:
-                self.write_log(f"触发止损！亏损 {loss_pct:.2%}，市价平仓")
+                self.write_log(f"触发止损！多头亏损 {loss_pct:.2%}，市价平仓")
                 order = self.sell(price=None, quantity=self.pos,
                                   order_type=OrderType.MARKET)
                 if order:
                     self._open_order_id = order.order_id
                 return
+        elif self.pos < 0 and self._entry_price:
+            loss_pct = float(self._entry_price - bar.close) / float(self._entry_price)
+            if loss_pct < -self.stop_loss_pct:
+                self.write_log(f"触发止损！空头亏损 {loss_pct:.2%}，市价平仓")
+                order = self.cover(price=None, quantity=abs(self.pos),
+                                   order_type=OrderType.MARKET)
+                if order:
+                    self._open_order_id = order.order_id
+                return
 
         # ── 信号判断 ──────────────────────────────────────────────
-        if rsi_val < self.oversold and self.pos <= 0:
+        # 注意：仅在无持仓（pos == 0）时开多，空头持仓时 RSI 超卖是强势信号应持有空头
+        if rsi_val < self.oversold and self.pos == Decimal("0"):
             qty = self.calc_quantity(
                 price=float(bar.close),
                 pct=self.position_pct,
