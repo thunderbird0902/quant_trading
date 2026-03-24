@@ -96,7 +96,7 @@ class DataRecorder:
         if not self._bar_buffer:
             return
         try:
-            count = self.db.save_bars(self._bar_buffer)
+            count = self.db.save_bars(self._bar_buffer, upsert=True)
             self._bar_count += count
             logger.debug("K线入库 %d 根（总计 %d）", count, self._bar_count)
         except Exception:
