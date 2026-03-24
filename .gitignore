@@ -1,7 +1,10 @@
 # 敏感配置 - 永远不要提交
 .env
 *.env
-config/okx_secrets.yaml
+config/
+
+# 保留example.yaml可上传
+!config/example.yaml
 
 # Python
 __pycache__/
