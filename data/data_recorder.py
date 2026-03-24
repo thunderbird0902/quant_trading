@@ -105,38 +105,12 @@ class DataRecorder:
             self._bar_buffer.clear()
 
     def _flush_ticks(self) -> None:
-        """将 tick_buffer 中的 Tick 批量写入数据库（INSERT OR IGNORE 去重）。"""
+        """将 tick_buffer 中的 Tick 批量写入数据库。"""
         if not self._tick_buffer:
             return
         try:
-            import sqlite3
-            # Database 没有 save_ticks 批量接口，使用内部 _conn 批量写入
-            params = []
-            for t in self._tick_buffer:
-                params.append((
-                    t.inst_id,
-                    t.exchange.value,
-                    t.timestamp,
-                    str(t.last_price),
-                    str(t.bid_price),
-                    str(t.ask_price),
-                    str(t.bid_size),
-                    str(t.ask_size),
-                    str(t.volume_24h),
-                    str(t.volume_ccy_24h),
-                ))
-            with self.db._conn() as conn:
-                conn.executemany(
-                    """
-                    INSERT OR IGNORE INTO tick_data
-                    (inst_id, exchange, timestamp,
-                     last_price, bid_price, ask_price,
-                     bid_size, ask_size, volume_24h, volume_ccy_24h)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    params,
-                )
-            logger.debug("Tick 入库 %d 条", len(params))
+            count = self.db.save_ticks(self._tick_buffer)
+            logger.debug("Tick 入库 %d 条", count)
         except Exception:
             logger.exception("Tick 批量入库失败，缓冲区已丢弃")
         finally:

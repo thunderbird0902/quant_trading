@@ -244,6 +244,37 @@ class Database:
 
     # ─────────────────────── 订单记录 ────────────────────────────
 
+    def save_ticks(self, ticks: list) -> int:
+        """批量保存 Tick 数据，返回实际插入行数（INSERT OR IGNORE 去重）。"""
+        if not ticks:
+            return 0
+        params = []
+        for t in ticks:
+            params.append((
+                t.inst_id,
+                t.exchange.value,
+                t.timestamp,
+                str(t.last_price),
+                str(t.bid_price),
+                str(t.ask_price),
+                str(t.bid_size),
+                str(t.ask_size),
+                str(t.volume_24h),
+                str(t.volume_ccy_24h),
+            ))
+        with self._conn() as conn:
+            result = conn.executemany(
+                """
+                INSERT OR IGNORE INTO tick_data
+                (inst_id, exchange, timestamp,
+                 last_price, bid_price, ask_price,
+                 bid_size, ask_size, volume_24h, volume_ccy_24h)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                params,
+            )
+            return result.rowcount
+
     def save_order(self, order) -> None:
         """保存/更新订单记录。"""
         with self._conn() as conn:
