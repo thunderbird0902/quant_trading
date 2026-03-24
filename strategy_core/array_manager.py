@@ -61,6 +61,10 @@ class ArrayManager:
         # 内部写指针（循环）
         self._idx: int = 0
 
+        # ── 有序数组缓存（避免每次指标计算都触发 np.concatenate）────────
+        self._cache: dict[str, np.ndarray] = {}
+        self._dirty: bool = False   # True = 缓冲区有更新，需刷新缓存
+
     # ──────────────────────────────── 属性 ─────────────────────────────────
 
     @property
@@ -90,38 +94,58 @@ class ArrayManager:
         if self.count < self.size:
             self.count += 1
 
+        self._dirty = True  # 标记缓存失效
+
     # ──────────────────────────────── 视图 ─────────────────────────────────
 
-    def _ordered(self, arr: np.ndarray) -> np.ndarray:
+    def _ordered(self, arr: np.ndarray, key: str) -> np.ndarray:
         """
         将环形数组转换为时间顺序（最旧→最新）的连续数组。
-        仅在 inited 后调用有意义。
+
+        仅在 inited 后调用有意义。使用缓存机制避免重复拷贝：
+        - _dirty=True 时重新计算所有缓存
+        - _dirty=False 时直接返回已缓存结果
         """
+        if self._dirty:
+            self._rebuild_cache()
+            self._dirty = False
+
+        return self._cache[key]
+
+    def _rebuild_cache(self) -> None:
+        """将所有环形数组一次性转为有序并缓存。"""
         if self.count < self.size:
-            # 未填满，直接取前 count 个元素（已是顺序）
-            return arr[:self.count].copy()
-        # 已填满：_idx 指向最旧元素
-        return np.concatenate([arr[self._idx:], arr[:self._idx]])
+            self._cache["open"]   = self.open_array[:self.count].copy()
+            self._cache["high"]   = self.high_array[:self.count].copy()
+            self._cache["low"]    = self.low_array[:self.count].copy()
+            self._cache["close"]  = self.close_array[:self.count].copy()
+            self._cache["volume"] = self.volume_array[:self.count].copy()
+        else:
+            self._cache["open"]   = np.concatenate([self.open_array[self._idx:],   self.open_array[:self._idx]])
+            self._cache["high"]   = np.concatenate([self.high_array[self._idx:],   self.high_array[:self._idx]])
+            self._cache["low"]    = np.concatenate([self.low_array[self._idx:],    self.low_array[:self._idx]])
+            self._cache["close"]  = np.concatenate([self.close_array[self._idx:],  self.close_array[:self._idx]])
+            self._cache["volume"] = np.concatenate([self.volume_array[self._idx:], self.volume_array[:self._idx]])
 
     @property
     def open(self) -> np.ndarray:
-        return self._ordered(self.open_array)
+        return self._ordered(self.open_array, "open")
 
     @property
     def high(self) -> np.ndarray:
-        return self._ordered(self.high_array)
+        return self._ordered(self.high_array, "high")
 
     @property
     def low(self) -> np.ndarray:
-        return self._ordered(self.low_array)
+        return self._ordered(self.low_array, "low")
 
     @property
     def close(self) -> np.ndarray:
-        return self._ordered(self.close_array)
+        return self._ordered(self.close_array, "close")
 
     @property
     def volume(self) -> np.ndarray:
-        return self._ordered(self.volume_array)
+        return self._ordered(self.volume_array, "volume")
 
     # ──────────────────────────────── 指标：SMA ─────────────────────────────
 
