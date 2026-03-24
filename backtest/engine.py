@@ -49,31 +49,31 @@ class _BacktestStrategyEngine:
 
     def _buy(
         self, strategy: BaseStrategy, inst_id: str,
-        price: Decimal, qty: Decimal, order_type: OrderType,
+        price: Decimal | None, qty: Decimal, order_type: OrderType,
     ) -> OrderData | None:
         return self._submit(strategy, inst_id, OrderSide.BUY, price, qty, order_type)
 
     def _sell(
         self, strategy: BaseStrategy, inst_id: str,
-        price: Decimal, qty: Decimal, order_type: OrderType,
+        price: Decimal | None, qty: Decimal, order_type: OrderType,
     ) -> OrderData | None:
         return self._submit(strategy, inst_id, OrderSide.SELL, price, qty, order_type)
 
     def _short(
         self, strategy: BaseStrategy, inst_id: str,
-        price: Decimal, qty: Decimal, order_type: OrderType,
+        price: Decimal | None, qty: Decimal, order_type: OrderType,
     ) -> OrderData | None:
         return self._submit(strategy, inst_id, OrderSide.SELL, price, qty, order_type)
 
     def _cover(
         self, strategy: BaseStrategy, inst_id: str,
-        price: Decimal, qty: Decimal, order_type: OrderType,
+        price: Decimal | None, qty: Decimal, order_type: OrderType,
     ) -> OrderData | None:
         return self._submit(strategy, inst_id, OrderSide.BUY, price, qty, order_type)
 
     def _close_long(
         self, strategy: BaseStrategy, inst_id: str,
-        price: Decimal, qty: Decimal, order_type: OrderType,
+        price: Decimal | None, qty: Decimal, order_type: OrderType,
     ) -> OrderData | None:
         # FIX: [新增，与 strategy_engine 接口保持一致]
         # 回测中平多 = 卖出（模拟器不区分 posSide，方向正确即可）
@@ -81,7 +81,7 @@ class _BacktestStrategyEngine:
 
     def _close_short(
         self, strategy: BaseStrategy, inst_id: str,
-        price: Decimal, qty: Decimal, order_type: OrderType,
+        price: Decimal | None, qty: Decimal, order_type: OrderType,
     ) -> OrderData | None:
         # FIX: [新增，与 strategy_engine 接口保持一致]
         # 回测中平空 = 买入
@@ -89,7 +89,7 @@ class _BacktestStrategyEngine:
 
     def _submit(
         self, strategy: BaseStrategy, inst_id: str,
-        side: OrderSide, price: Decimal, qty: Decimal, order_type: OrderType,
+        side: OrderSide, price: Decimal | None, qty: Decimal, order_type: OrderType,
     ) -> OrderData | None:
         request = OrderRequest(
             inst_id=inst_id,
@@ -326,9 +326,9 @@ class BacktestEngine:
 
             try:
                 if in_warmup:
-                    # 预热阶段：不撮合，但仍记录权益快照
+                    # 预热阶段：不撮合，但仍记录权益快照（含 intra-bar 极端情况）
                     self.broker._update_mark_prices(bar)
-                    self.broker._snapshot_equity(bar.timestamp)
+                    self.broker._snapshot_equity(bar.timestamp, bar)
                 else:
                     # [P1-5] warmup 刚结束时，开启 trading 并清空残余挂单
                     if i == self.warmup_bars:

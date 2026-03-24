@@ -296,7 +296,7 @@ class SimulatedBroker:
         """
         if not self._pending_orders:
             self._update_mark_prices(bar)
-            self._snapshot_equity(bar.timestamp)
+            self._snapshot_equity(bar.timestamp, bar)
             return []
 
         trades = []
@@ -330,7 +330,7 @@ class SimulatedBroker:
             del self._pending_orders[order.order_id]
 
         self._update_mark_prices(bar)
-        self._snapshot_equity(bar.timestamp)
+        self._snapshot_equity(bar.timestamp, bar)
         return trades
 
     # ─────────────────────── 内部方法 ────────────────────────────
@@ -499,6 +499,28 @@ class SimulatedBroker:
         if pos_info:
             pos_info["mark_price"] = bar.close
 
+    def _snapshot_worst_case_equity(self, bar: BarData) -> Decimal:
+        """
+        计算 bar 内的极端情况权益（worst-case）。
+
+        - 多头持仓：bar 内最低价最不利，用 bar.low 计算未实现盈亏
+        - 空头持仓：bar 内最高价最不利，用 bar.high 计算未实现盈亏
+
+        用于修正权益曲线对 bar 内剧烈波动风险的低估。
+        """
+        worst = self._cash
+        for pos_info in self._positions.values():
+            qty = pos_info.get("quantity", Decimal("0"))
+            avg = pos_info.get("avg_price", Decimal("0"))
+            if qty == Decimal("0") or avg == Decimal("0"):
+                continue
+            if qty > 0:
+                worst_pnl = (bar.low - avg) * qty
+            else:
+                worst_pnl = (avg - bar.high) * abs(qty)
+            worst += worst_pnl
+        return worst
+
     def _calc_unrealized_pnl(self) -> Decimal:
         """计算所有持仓的未实现盈亏"""
         total = Decimal("0")
@@ -534,13 +556,20 @@ class SimulatedBroker:
                 total += frozen + unrealized
         return total
 
-    def _snapshot_equity(self, ts: datetime) -> None:
+    def _snapshot_equity(self, ts: datetime, bar: BarData | None = None) -> None:
         """
         快照当前总权益 = 现金 + 持仓市值贡献。
+
+        若传入 bar，则额外计算 bar 内极端情况权益，
+        并取两者中更低的值（更保守的权益估算），避免 intra-bar 风险被低估。
 
         同一时间戳覆盖而非追加，避免重复。
         """
         equity = self._cash + self._calc_position_value()
+        if bar is not None:
+            worst_equity = self._snapshot_worst_case_equity(bar)
+            if worst_equity < equity:
+                equity = worst_equity
         self._total_equity = equity
         if self.equity_curve and self.equity_curve[-1][0] == ts:
             self.equity_curve[-1] = (ts, equity)
