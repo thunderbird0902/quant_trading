@@ -15,7 +15,7 @@ from decimal import Decimal
 
 from core.enums import Exchange, MarginMode, OrderSide, OrderStatus, OrderType, PositionSide
 from core.models import BarData, OrderRequest
-from backtest.broker import SimulatedBroker
+from backtest.broker import FeeSchedule, FeeTier, SimulatedBroker
 from backtest.performance import PerformanceAnalyzer
 from backtest.engine import BacktestEngine
 from strategy_core.impls.double_ma_strategy import DoubleMaStrategy
@@ -69,8 +69,7 @@ class TestSimulatedBroker:
     def _broker(self, capital: float = 100_000) -> SimulatedBroker:
         return SimulatedBroker(
             initial_capital=Decimal(str(capital)),
-            taker_fee=Decimal("0"),    # 简化：不计手续费
-            maker_fee=Decimal("0"),
+            fee_schedule=FeeSchedule([FeeTier(Decimal("0"), Decimal("0"), Decimal("0"))]),
         )
 
     def _buy_request(self, inst_id="BTC-USDT", qty="1", price=None) -> OrderRequest:

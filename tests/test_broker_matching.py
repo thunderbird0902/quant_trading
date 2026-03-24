@@ -12,7 +12,7 @@ import pytest
 
 from core.enums import Exchange, MarginMode, OrderSide, OrderType
 from core.models import BarData, OrderRequest
-from backtest.broker import SimulatedBroker
+from backtest.broker import FeeSchedule, FeeTier, SimulatedBroker
 
 
 def make_bar(close: float, open_: float = None, high: float = None, low: float = None) -> BarData:
@@ -41,7 +41,10 @@ class TestBrokerMatching:
 
     def test_limit_buy_no_fill_when_price_not_reached(self):
         """限价单在价格未触及时不成交"""
-        broker = SimulatedBroker(initial_capital=Decimal("100000"), taker_fee=Decimal("0"), maker_fee=Decimal("0"))
+        broker = SimulatedBroker(
+            initial_capital=Decimal("100000"),
+            fee_schedule=FeeSchedule([FeeTier(Decimal("0"), Decimal("0"), Decimal("0"))]),
+        )
 
         req = OrderRequest(
             inst_id="BTC-USDT",
@@ -62,7 +65,10 @@ class TestBrokerMatching:
 
     def test_limit_buy_fills_when_price_reached(self):
         """限价单触及时成交"""
-        broker = SimulatedBroker(initial_capital=Decimal("100000"), taker_fee=Decimal("0"), maker_fee=Decimal("0"))
+        broker = SimulatedBroker(
+            initial_capital=Decimal("100000"),
+            fee_schedule=FeeSchedule([FeeTier(Decimal("0"), Decimal("0"), Decimal("0"))]),
+        )
 
         req = OrderRequest(
             inst_id="BTC-USDT",
@@ -86,8 +92,7 @@ class TestBrokerMatching:
         """市价单滑点计算正确"""
         broker = SimulatedBroker(
             initial_capital=Decimal("100000"),
-            taker_fee=Decimal("0"),
-            maker_fee=Decimal("0"),
+            fee_schedule=FeeSchedule([FeeTier(Decimal("0"), Decimal("0"), Decimal("0"))]),
             slippage_pct=Decimal("0.001")  # 0.1% 滑点
         )
 
@@ -112,8 +117,7 @@ class TestBrokerMatching:
         """手续费计算正确（taker）"""
         broker = SimulatedBroker(
             initial_capital=Decimal("100000"),
-            taker_fee=Decimal("0.001"),  # 0.1%
-            maker_fee=Decimal("0"),
+            fee_schedule=FeeSchedule([FeeTier(Decimal("0"), Decimal("0.001"), Decimal("0"))]),
         )
 
         req = OrderRequest(
@@ -137,8 +141,7 @@ class TestBrokerMatching:
         """手续费计算正确（maker）"""
         broker = SimulatedBroker(
             initial_capital=Decimal("100000"),
-            taker_fee=Decimal("0"),
-            maker_fee=Decimal("0.0005"),  # 0.05%
+            fee_schedule=FeeSchedule([FeeTier(Decimal("0"), Decimal("0"), Decimal("0.0005"))]),
         )
 
         req = OrderRequest(
