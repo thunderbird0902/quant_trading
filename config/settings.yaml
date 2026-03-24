@@ -1,0 +1,68 @@
+system:
+  mode: "demo"                    # demo（模拟盘）/ live（实盘）
+  log_level: "INFO"               # DEBUG / INFO / WARNING / ERROR
+  log_dir: "logs"                 # 日志目录
+  database: "sqlite"              # sqlite / postgresql
+
+telegram:
+  enabled: true                   # 是否启用 Telegram 通知
+  bot_token: "8624021972:AAEoyiiC86K0sI-ZdA3SqqQUmgHhqVRMw0Y"  # Telegram Bot Token
+  chat_id: "8019824641"           # 接收通知的 Chat ID
+  notify_trade: true              # 推送交易成交
+  notify_position: true           # 推送持仓变化
+  notify_risk: true               # 推送风控事件
+  equity_interval: 300            # 定时权益推送间隔（秒），0=禁用
+
+gateways:
+  okx:
+    enabled: true
+    # API Key 从环境变量读取（不写入此文件）：
+    #   OKX_API_KEY、OKX_SECRET_KEY、OKX_PASSPHRASE、OKX_FLAG
+    flag: "1"                     # 0=实盘, 1=模拟盘
+    proxy_host: ""                # HTTP 代理（可选）
+    proxy_port: 0
+
+  ib:                             # Interactive Brokers（预留）
+    enabled: false
+    host: "127.0.0.1"
+    port: 7497                    # TWS 模拟盘端口
+    client_id: 1
+
+  ctp:                            # 国内期货 CTP（预留）
+    enabled: false
+    broker_id: "9999"
+    td_address: "tcp://180.168.146.187:10101"
+    md_address: "tcp://180.168.146.187:10111"
+
+risk:
+  enabled: true
+  max_daily_loss_pct: 0.05        # 每日最大亏损率（5%）
+  max_single_loss_pct: 0.02       # 单笔最大亏损率（2%）
+  max_position_pct: 0.30          # 单品种最大仓位占比（30%）
+  max_total_position_pct: 0.90    # 总仓位最大占比（90%）
+  max_consecutive_losses: 5       # 最大连续亏损笔数
+  price_deviation_limit: 0.10     # 下单价格偏离限制（10%）
+  max_drawdown_pct: 0.0           # 账户最大回撤保护（0=不启用，建议实盘设 0.15）
+  max_orders_per_second: 10       # 业务层下单频率上限（单/秒）
+  hedge_mode: true                # OKX 双向持仓模式（true=多空同持，false=净仓位）
+
+# 策略实例级配置示例（在代码中通过 strategy_config 传入）：
+# strategy_config:
+#   margin_mode: "CROSS"    # CROSS=全仓 ISOLATED=逐仓 CASH=现货（默认 CROSS）
+#   hedge_mode: false       # 单策略是否用双向持仓模式（覆盖 risk.hedge_mode）
+
+database:
+  sqlite:
+    path: "data/quant_trading.db"
+  postgresql:                     # 生产环境可切换
+    host: "localhost"
+    port: 5432
+    database: "quant_trading"
+    user: "postgres"
+    password: ""                  # 建议使用环境变量
+
+data:
+  bar_batch_size: 50              # K 线批量写入大小
+  tick_batch_size: 50             # Tick 批量写入大小（DataRecorder 用）
+  page_limit: 300                 # API 单次拉取最大条数（OKX 上限 300）
+  gap_threshold_mul: 2            # 时间间隙告警倍率（连续两根间隔超过 N×interval 则告警）
