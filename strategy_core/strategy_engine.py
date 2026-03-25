@@ -183,11 +183,14 @@ class StrategyEngine:
 
     # ─────────────────────── 事件分发 ────────────────────────────
 
+    def _match_inst(self, inst_id: str, strategy_name: str) -> bool:
+        subs = self._subscriptions.get(strategy_name, set())
+        return any(s == inst_id or s.startswith(f"{inst_id}:") for s in subs)
+
     def _on_tick(self, event: Event) -> None:
         tick: TickData = event.data
         for strategy in self._strategies.values():
-            subs = self._subscriptions.get(strategy.name, set())
-            if strategy.active and tick.inst_id in subs:
+            if strategy.active and self._match_inst(tick.inst_id, strategy.name):
                 try:
                     strategy.on_tick(tick)
                 except Exception:
@@ -206,7 +209,7 @@ class StrategyEngine:
     def _on_order(self, event: Event) -> None:
         order: OrderData = event.data
         for strategy in self._strategies.values():
-            if strategy.active and order.inst_id in self._subscriptions.get(strategy.name, set()):
+            if strategy.active and self._match_inst(order.inst_id, strategy.name):
                 try:
                     strategy.on_order(order)
                 except Exception:
@@ -215,7 +218,7 @@ class StrategyEngine:
     def _on_trade(self, event: Event) -> None:
         trade: TradeData = event.data
         for strategy in self._strategies.values():
-            if strategy.active and trade.inst_id in self._subscriptions.get(strategy.name, set()):
+            if strategy.active and self._match_inst(trade.inst_id, strategy.name):
                 try:
                     strategy.on_trade(trade)
                 except Exception:
@@ -232,7 +235,7 @@ class StrategyEngine:
         else:
             self._positions[key] = pos
         for strategy in self._strategies.values():
-            if strategy.active and pos.inst_id in self._subscriptions.get(strategy.name, set()):
+            if strategy.active and self._match_inst(pos.inst_id, strategy.name):
                 try:
                     strategy.on_position(pos)
                 except Exception:
