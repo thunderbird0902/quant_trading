@@ -185,21 +185,22 @@ def walk_forward(
         raise ValueError(f"n_splits 至少为 2，当前为 {n_splits}")
 
     n_bars = len(bars)
-    window_size = n_bars // n_splits
+    test_size = n_bars // (n_splits + 1)
 
     split_results: list[SplitResult] = []
 
     for i in range(n_splits):
         if window_type == "rolling":
-            train_end_idx = (i + 1) * window_size
+            train_start_idx = i * test_size
+            train_end_idx = train_start_idx + test_size
         else:
-            train_end_idx = (i + 1) * window_size
+            train_start_idx = 0
+            train_end_idx = (i + 1) * test_size
 
-        train_start_idx = 0 if window_type == "expanding" else i * window_size
         train_bars = bars[train_start_idx:train_end_idx]
 
         test_start_idx = train_end_idx
-        test_end_idx = min((i + 2) * window_size, n_bars)
+        test_end_idx = min(test_start_idx + test_size, n_bars)
         test_bars = bars[test_start_idx:test_end_idx]
 
         if len(train_bars) < 50 or len(test_bars) < 20:
@@ -326,7 +327,7 @@ def _default_grid_search(
 
     grid_keys = list(param_grid.keys())
     grid_values = list(param_grid.values())
-    all_combinations = _cartesian_product(grid_values)
+    all_combinations = _cartesian_product(*grid_values)
 
     best_metric = float("-inf")
     best_params = {}

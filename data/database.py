@@ -194,29 +194,6 @@ class Database:
             )
             return result.rowcount
 
-    def save_bars(self, bars: list) -> int:
-        """批量保存 K 线，返回实际插入行数。"""
-        if not bars:
-            return 0
-        with self._conn() as conn:
-            params = [
-                (
-                    b.inst_id, b.exchange.value, b.interval, b.timestamp,
-                    str(b.open), str(b.high), str(b.low), str(b.close),
-                    str(b.volume), str(b.volume_ccy),
-                )
-                for b in bars
-            ]
-            result = conn.executemany(
-                """
-                INSERT OR IGNORE INTO bar_data
-                (inst_id, exchange, interval, timestamp, open, high, low, close, volume, volume_ccy)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                params,
-            )
-            return result.rowcount
-
     def load_bars(
         self,
         inst_id: str,
