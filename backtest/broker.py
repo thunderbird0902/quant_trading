@@ -251,15 +251,14 @@ class SimulatedBroker:
             elif request.side == OrderSide.SELL:
                 # 多头持仓可以被平仓的部分
                 closable = cur_qty if cur_qty > 0 else Decimal("0")
-                # 需要新开空头的部分（做空需要保证金）
-                open_qty = max(request.quantity - closable, Decimal("0"))
-                if open_qty > 0:
-                    est_margin = est_price * open_qty * (Decimal("1") + fee_rate)
-                    if self._cash < est_margin:
-                        return self._reject_order(
-                            order_id, request, ts,
-                            f"保证金不足 cash={self._cash:.2f} < margin={est_margin:.2f}"
-                        )
+                # 禁止超卖：卖出数量不能超过可平仓量
+                if request.quantity > closable:
+                    request.quantity = closable
+                if request.quantity <= Decimal("0"):
+                    return self._reject_order(
+                        order_id, request, ts,
+                        f"无可用持仓可卖 cur_qty={cur_qty} order_qty={request.quantity}"
+                    )
 
         # ── 订单通过检查，加入挂单队列 ──────────────────────────
         order = OrderData(

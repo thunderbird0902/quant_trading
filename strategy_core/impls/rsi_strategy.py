@@ -80,17 +80,20 @@ class RsiStrategy(BaseStrategy):
         rsi_val = self._am.rsi(self.rsi_period)
         self.write_log(f"close={bar.close}  RSI={rsi_val:.2f}  pos={self.pos}")
 
-        # 有挂单时不重复下单
-        if self._open_order_id:
-            return
-
-        # ── 异常保护（优先于信号）─────────────────────────────────
+        # ── 异常保护（优先级最高，不管有没有挂单）───────────────
         if self.pos < 0:
+            if self._open_order_id:
+                self.cancel(self._open_order_id)
+                self._open_order_id = None
             self.write_log(f"异常空仓 {self.pos}，强制平仓")
             order = self.cover(price=None, quantity=abs(self.pos),
                                order_type=OrderType.MARKET)
             if order:
                 self._open_order_id = order.order_id
+            return
+
+        # 有挂单时不重复下单
+        if self._open_order_id:
             return
 
         # ── 多头止损检查 ────────────────────────────────────────
