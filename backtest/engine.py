@@ -411,8 +411,25 @@ class BacktestEngine:
 
         try:
             position = self.broker.get_position(trade.inst_id)
-            if position:
-                self.strategy.on_position(position)
+            if position is None:
+                position = PositionData(
+                    inst_id=trade.inst_id,
+                    exchange=Exchange.OKX,
+                    position_side=PositionSide.NET,
+                    quantity=Decimal("0"),
+                    avg_price=Decimal("0"),
+                    unrealized_pnl=Decimal("0"),
+                    unrealized_pnl_ratio=Decimal("0"),
+                    realized_pnl=Decimal("0"),
+                    leverage=1,
+                    liquidation_price=Decimal("0"),
+                    margin=Decimal("0"),
+                    margin_ratio=Decimal("1"),
+                    margin_mode=MarginMode.CASH,
+                    mark_price=Decimal("0"),
+                    update_time=datetime.now(),
+                )
+            self.strategy.on_position(position)
         except Exception as e:
             logger.warning("strategy.on_position 异常: %s", e)
 

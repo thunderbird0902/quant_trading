@@ -471,7 +471,7 @@ class SimulatedBroker:
                     pos_info["frozen_margin"] = Decimal("0")
                     self._cash -= fill_price * open_qty  # 开多扣款
                 else:
-                    remaining = cur_qty + close_qty
+                    remaining = cur_qty - close_qty
                     pos_info["quantity"] = remaining
                     if remaining == Decimal("0"):
                         pos_info["avg_price"] = Decimal("0")
