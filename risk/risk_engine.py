@@ -7,7 +7,7 @@ from decimal import Decimal
 from threading import Lock
 from typing import TYPE_CHECKING
 
-from core.enums import Exchange, OrderSide, OrderType, PositionSide
+from core.enums import Exchange, MarginMode, OrderSide, OrderType, PositionSide
 from core.event_bus import EventBus, EventType, Event
 from core.exceptions import RiskError
 from core.models import BalanceData, OrderRequest, PositionData, TradeData
@@ -439,10 +439,29 @@ class RiskEngine:
             price=order.filled_price,
             quantity=order.filled_quantity,
             fee=order.fee,
-            fee_ccy="",
+            fee_ccy="USDT",
             timestamp=now_utc(),
         )
         self.loss_limit.on_trade(trade, pnl)
+
+        position = PositionData(
+            inst_id=order.inst_id,
+            exchange=order.exchange,
+            position_side=order.position_side or PositionSide.NET,
+            quantity=order.filled_quantity,
+            avg_price=order.filled_price,
+            unrealized_pnl=Decimal("0"),
+            unrealized_pnl_ratio=Decimal("0"),
+            realized_pnl=Decimal("0"),
+            leverage=1,
+            liquidation_price=Decimal("0"),
+            margin=Decimal("0"),
+            margin_ratio=Decimal("1"),
+            margin_mode=MarginMode.CROSS,
+            mark_price=order.filled_price,
+            update_time=now_utc(),
+        )
+        self.loss_limit.update_unrealized_pnl(position)
 
         # 检查亏损是否触发停止
         if self.loss_limit.is_halted:

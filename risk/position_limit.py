@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from decimal import Decimal
 
-from core.enums import Exchange
+from core.enums import Exchange, OrderSide, PositionSide
 from core.exceptions import PositionLimitError
 from core.models import OrderRequest, PositionData
 
@@ -58,7 +58,8 @@ class PositionLimitChecker:
 
     def update_position(self, position: PositionData) -> None:
         """更新持仓快照（由 RiskEngine 在收到 POSITION_UPDATED 事件时调用）。"""
-        key = f"{position.inst_id}_{position.position_side.value}"
+        pos_side = position.position_side or PositionSide.NET
+        key = f"{position.inst_id}_{pos_side.value}"
         if position.quantity == 0:
             self._positions.pop(key, None)
         else:
@@ -115,23 +116,51 @@ class PositionLimitChecker:
                 f"[{request.inst_id}] 下单后持仓量 {after_qty} 超过上限 {max_qty}"
             )
 
+    def _is_closing_order(self, request: OrderRequest) -> bool:
+        """
+        判断订单是否为平仓/减仓方向。
+
+        在双向持仓模式下（hedge）：
+        - SELL + LONG = 平多（减仓）
+        - BUY + SHORT = 平空（减仓）
+
+        在 NET 模式下（无 posSide），根据当前实际持仓方向判断：
+        - 有多头时 SELL = 平多
+        - 有空头时 BUY = 平空
+        """
+        if request.position_side is not None:
+            pos_side = request.position_side
+            side = request.side
+            return (
+                (pos_side == PositionSide.LONG and side == OrderSide.SELL) or
+                (pos_side == PositionSide.SHORT and side == OrderSide.BUY)
+            )
+        inst_positions = [
+            p for p in self._positions.values()
+            if p.inst_id == request.inst_id
+        ]
+        has_long = any(p.position_side == PositionSide.LONG for p in inst_positions)
+        has_short = any(p.position_side == PositionSide.SHORT for p in inst_positions)
+        return (request.side == OrderSide.SELL and has_long) or (
+            request.side == OrderSide.BUY and has_short
+        )
+
     def _check_value_pct(self, request: OrderRequest, current_price: Decimal) -> None:
         """检查单品种持仓价值占总权益的比例。"""
         if self._total_equity <= 0:
             return
 
-        # 本次下单的名义价值
         new_order_value = request.quantity * current_price
 
-        # 该品种当前持仓价值
         current_value = sum(
             p.quantity * p.mark_price
             for p in self._positions.values()
             if p.inst_id == request.inst_id
         )
 
-        after_value = current_value + new_order_value
-        after_pct = after_value / self._total_equity
+        is_closing = self._is_closing_order(request)
+        after_value = current_value - new_order_value if is_closing else current_value + new_order_value
+        after_pct = abs(after_value) / self._total_equity
 
         if after_pct > self.max_position_pct:
             raise PositionLimitError(
@@ -140,10 +169,11 @@ class PositionLimitChecker:
             )
 
         # 总持仓价值检查
-        total_value = sum(
+        total_current = sum(
             p.quantity * p.mark_price for p in self._positions.values()
-        ) + new_order_value
-        total_pct = total_value / self._total_equity
+        )
+        total_value = total_current - new_order_value if is_closing else total_current + new_order_value
+        total_pct = abs(total_value) / self._total_equity
 
         if total_pct > self.max_total_position_pct:
             raise PositionLimitError(

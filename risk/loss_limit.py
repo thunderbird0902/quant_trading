@@ -268,8 +268,8 @@ class LossLimitChecker:
         if positions is None:
             return False
         inst_positions = [p for p in positions if p.inst_id == request.inst_id]
-        has_long = any(p.quantity > 0 for p in inst_positions)
-        has_short = any(p.quantity < 0 for p in inst_positions)
+        has_long = any(p.position_side == PositionSide.LONG for p in inst_positions)
+        has_short = any(p.position_side == PositionSide.SHORT for p in inst_positions)
         # SELL 平多头，或 BUY 平空头
         return (request.side == OrderSide.SELL and has_long) or (
             request.side == OrderSide.BUY and has_short
