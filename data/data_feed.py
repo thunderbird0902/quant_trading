@@ -98,7 +98,10 @@ class DataFeed:
             清洗后的 BarData 列表，按时间戳升序排列
         """
         # 统一时区
-        start = _ensure_utc(start)
+        if start is None:
+            start = datetime(1970, 1, 1, tzinfo=timezone.utc)
+        else:
+            start = _ensure_utc(start)
         end = _ensure_utc(end or datetime.now(timezone.utc))
 
         exchange = self.gateway.exchange.value if self.gateway else ""

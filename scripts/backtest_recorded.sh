@@ -22,11 +22,13 @@ echo "============================================"
 
 python -c "
 import sys
+import os
 sys.path.insert(0, '.')
 
 from data.data_feed import DataFeed
 from backtest.engine import BacktestEngine
 from strategy_runners.cli import parse_date
+from strategy_core.data_utils import load_bars
 from decimal import Decimal
 import importlib
 
@@ -38,12 +40,26 @@ module_path = strategy_map['$STRATEGY']
 module_name, class_name = module_path.rsplit('.', 1)
 strategy_class = getattr(importlib.import_module(module_name), class_name)
 
-feed = DataFeed.from_recorded_data('$DB_PATH', '$INST_ID', '$INTERVAL')
+db_path = '$DB_PATH'
+if os.path.exists(db_path):
+    feed = DataFeed.from_recorded_data(db_path, '$INST_ID', '$INTERVAL')
+    start = parse_date('${START_DATE:-}')
+    end = parse_date('${END_DATE:-}')
+    bars = feed.load_history('$INST_ID', '$INTERVAL', start, end)
+    print(f'从录制数据加载 {len(bars)} 根 K线')
+else:
+    bars = []
+    print(f'数据文件不存在 ({db_path})，使用模拟数据代替')
 
-start = parse_date('${START_DATE:-None}')
-end = parse_date('${END_DATE:-None}')
-bars = feed.load_history('$INST_ID', '$INTERVAL', start, end)
-print(f'加载 {len(bars)} 根 K线')
+if not bars:
+    bars = load_bars(
+        source='mock',
+        inst_id='$INST_ID',
+        interval='$INTERVAL',
+        mock_days=180,
+        mock_seed=42,
+    )
+    print(f'生成模拟 K 线 {len(bars)} 根')
 
 engine = BacktestEngine(
     strategy_class=strategy_class,

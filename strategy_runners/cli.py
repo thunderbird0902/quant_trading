@@ -136,8 +136,8 @@ def parse_log_level(level_str: str) -> int:
 
 
 def parse_date(s: str | None) -> datetime | None:
-    """将 YYYY-MM-DD 字符串解析为 UTC datetime；None 原样返回。"""
-    if s is None:
+    """将 YYYY-MM-DD 字符串解析为 UTC datetime；None / 空字符串原样返回 None。"""
+    if s is None or s == "":
         return None
     from datetime import datetime, timezone
     return datetime.strptime(s, "%Y-%m-%d").replace(tzinfo=timezone.utc)
