@@ -79,6 +79,7 @@ class LossLimitChecker:
             self._settlement_end_ts = None
 
         if today != self._today:
+            self._today = today
             from datetime import timedelta
             settlement_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
             self._settlement_end_ts = settlement_start + timedelta(seconds=self._settlement_window_seconds)
