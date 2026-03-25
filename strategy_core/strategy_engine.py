@@ -38,7 +38,7 @@ class StrategyEngine:
         # 名称 → 策略实例
         self._strategies: dict[str, "BaseStrategy"] = {}
 
-        # 订阅映射：strategy_name → set of inst_id
+        # 订阅映射：strategy_name → set of "inst_id:interval" 字符串
         self._subscriptions: dict[str, set[str]] = {}
 
         # 持仓/余额缓存
@@ -111,9 +111,10 @@ class StrategyEngine:
             logger.warning("策略 %s 未知 margin_mode=%s，使用 CROSS", name, margin_mode_str)
             strategy._margin_mode = MarginMode.CROSS
         self._strategies[name] = strategy
-        # 初始化该策略的订阅集合（默认订阅主产品）
-        self._subscriptions[name] = {inst_id}
-        logger.info("策略已注册: %s (%s %s)", name, strategy_class.__name__, inst_id)
+        # 初始化该策略的订阅集合（默认订阅主产品 + interval）
+        interval = (config or {}).get("interval", "1H")
+        self._subscriptions[name] = {f"{inst_id}:{interval}"}
+        logger.info("策略已注册: %s (%s %s %s)", name, strategy_class.__name__, inst_id, interval)
         return strategy
 
     def start_strategy(self, name: str) -> None:
@@ -147,7 +148,7 @@ class StrategyEngine:
             strategy.active = False
         logger.info("策略已停止: %s", name)
 
-    def subscribe_extra(self, strategy_name: str, inst_id: str) -> None:
+    def subscribe_extra(self, strategy_name: str, inst_id: str, interval: str | None = None) -> None:
         """
         为策略订阅额外的行情品种（多品种策略使用）。
 
@@ -157,10 +158,15 @@ class StrategyEngine:
         Args:
             strategy_name: 策略实例名
             inst_id:       额外订阅的产品 ID
+            interval:      K 线周期（可选，默认 None 表示仅订阅 Tick）
         """
         self._get_strategy(strategy_name)  # 确认策略存在
-        self._subscriptions.setdefault(strategy_name, set()).add(inst_id)
-        logger.info("策略 %s 已订阅额外品种: %s", strategy_name, inst_id)
+        if interval:
+            self._subscriptions.setdefault(strategy_name, set()).add(f"{inst_id}:{interval}")
+            logger.info("策略 %s 已订阅额外品种: %s %s", strategy_name, inst_id, interval)
+        else:
+            self._subscriptions.setdefault(strategy_name, set()).add(inst_id)
+            logger.info("策略 %s 已订阅额外 Tick: %s", strategy_name, inst_id)
 
     def stop_all_strategies(self) -> None:
         """停止所有策略。"""
@@ -180,7 +186,8 @@ class StrategyEngine:
     def _on_tick(self, event: Event) -> None:
         tick: TickData = event.data
         for strategy in self._strategies.values():
-            if strategy.active and tick.inst_id in self._subscriptions.get(strategy.name, set()):
+            subs = self._subscriptions.get(strategy.name, set())
+            if strategy.active and tick.inst_id in subs:
                 try:
                     strategy.on_tick(tick)
                 except Exception:
@@ -188,8 +195,9 @@ class StrategyEngine:
 
     def _on_bar(self, event: Event) -> None:
         bar: BarData = event.data
+        bar_key = f"{bar.inst_id}:{bar.interval}"
         for strategy in self._strategies.values():
-            if strategy.active and bar.inst_id in self._subscriptions.get(strategy.name, set()):
+            if strategy.active and bar_key in self._subscriptions.get(strategy.name, set()):
                 try:
                     strategy.on_bar(bar)
                 except Exception:
@@ -217,7 +225,8 @@ class StrategyEngine:
         pos: PositionData = event.data
         # FIX: [hedge 模式同一品种同时有 LONG/SHORT 两个仓位，用 inst_id:posside 做 key
         # 否则第二个 POSITION_UPDATED 会覆盖第一个，策略只能看到最后一次更新的方向]
-        key = f"{pos.inst_id}:{pos.position_side.value}"
+        pos_side = pos.position_side or PositionSide.NET
+        key = f"{pos.inst_id}:{pos_side.value}"
         if pos.quantity == Decimal("0"):
             self._positions.pop(key, None)
         else:
