@@ -54,20 +54,10 @@ class RsiStrategy(BaseStrategy):
     # ─────────────────────── 生命周期 ────────────────────────────
 
     def on_init(self) -> None:
-        """加载历史 K 线预热 RSI 指标"""
+        """RSI 策略初始化"""
         self.write_log(f"RSI 策略初始化 period={self.rsi_period}")
-        bars = self.get_klines(
-            self.inst_id, self.interval,
-            limit=self.rsi_period * 3 + 10,
-        )
-        for bar in bars[:-1]:
-            self._am.update_bar(bar)
-
-        if self._am.inited:
-            rsi_val = self._am.rsi(self.rsi_period)
-            self.write_log(f"预热完成，当前 RSI={rsi_val:.2f}")
-        else:
-            self.write_log("数据不足，等待更多 K 线")
+        # 注意：回测时 on_init 期间 _current_bar_index=-1，get_klines() 返回空，
+        # 预热依赖 run loop 里 on_bar 自动积累数据，无需额外处理。
 
     def on_stop(self) -> None:
         """停止时撤销所有挂单"""
@@ -94,22 +84,22 @@ class RsiStrategy(BaseStrategy):
         if self._open_order_id:
             return
 
-        # ── 止损检查（优先于信号）────────────────────────────────
+        # ── 异常保护（优先于信号）─────────────────────────────────
+        if self.pos < 0:
+            self.write_log(f"异常空仓 {self.pos}，强制平仓")
+            order = self.cover(price=None, quantity=abs(self.pos),
+                               order_type=OrderType.MARKET)
+            if order:
+                self._open_order_id = order.order_id
+            return
+
+        # ── 多头止损检查 ────────────────────────────────────────
         if self.pos > 0 and self._entry_price:
             loss_pct = float(bar.close - self._entry_price) / float(self._entry_price)
             if loss_pct < -self.stop_loss_pct:
                 self.write_log(f"触发止损！多头亏损 {loss_pct:.2%}，市价平仓")
                 order = self.sell(price=None, quantity=self.pos,
                                   order_type=OrderType.MARKET)
-                if order:
-                    self._open_order_id = order.order_id
-                return
-        elif self.pos < 0 and self._entry_price:
-            loss_pct = float(self._entry_price - bar.close) / float(self._entry_price)
-            if loss_pct < -self.stop_loss_pct:
-                self.write_log(f"触发止损！空头亏损 {loss_pct:.2%}，市价平仓")
-                order = self.cover(price=None, quantity=abs(self.pos),
-                                   order_type=OrderType.MARKET)
                 if order:
                     self._open_order_id = order.order_id
                 return
@@ -149,25 +139,19 @@ class RsiStrategy(BaseStrategy):
             self._open_order_id = None
 
     def on_trade(self, trade: TradeData) -> None:
-        """成交回报：仅记录日志和更新入场价，pos 以 on_position 为准"""
+        """成交回报：仅记录日志，pos 和 _entry_price 以 on_position 为准"""
         self.write_log(
             f"成交回报 price={trade.price} qty={trade.quantity} "
             f"side={trade.side.value} order_id={trade.order_id}"
         )
-        if trade.side == OrderSide.BUY:
-            if self.pos > 0 and self._entry_price is not None:
-                total_qty = self.pos + trade.quantity
-                avg_price = (self._entry_price * self.pos + trade.price * trade.quantity) / total_qty
-                self._entry_price = avg_price
-                self.write_log(f"加仓成功，更新加权平均入场价 {avg_price}")
-            else:
-                self._entry_price = trade.price
-        else:
-            if self._entry_price is not None:
-                self.write_log(f"平仓成交，入场价 {self._entry_price} 已清除")
-            self._entry_price = None
 
     def on_position(self, position: PositionData) -> None:
-        """持仓更新：交易所权威状态"""
+        """持仓更新：交易所权威状态，同步更新 _entry_price（on_trade 后可能是旧值）"""
         self.pos = position.quantity
-        self.write_log(f"持仓更新: pos={self.pos}")
+        if position.quantity > 0 and position.avg_price > 0:
+            self._entry_price = position.avg_price
+        elif position.quantity < 0 and position.avg_price > 0:
+            self._entry_price = position.avg_price
+        else:
+            self._entry_price = None
+        self.write_log(f"持仓更新: pos={self.pos} avg={position.avg_price}")
