@@ -109,7 +109,10 @@ class PositionLimitChecker:
             p.quantity for key, p in self._positions.items()
             if p.inst_id == request.inst_id
         )
-        after_qty = current_qty + request.quantity
+
+        is_closing = self._is_closing_order(request)
+        after_qty = current_qty - request.quantity if is_closing \
+                    else current_qty + request.quantity
 
         if after_qty > Decimal(str(max_qty)):
             raise PositionLimitError(
