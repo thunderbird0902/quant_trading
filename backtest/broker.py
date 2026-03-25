@@ -620,16 +620,12 @@ class SimulatedBroker:
         """
         快照当前总权益 = 现金 + 持仓市值贡献。
 
-        若传入 bar，则额外计算 bar 内极端情况权益，
-        并取两者中更低的值（更保守的权益估算），避免 intra-bar 风险被低估。
+        权益曲线反映账户的实际历史表现，按收盘价计算。
+        intra-bar 极端风险由 _snapshot_worst_case_equity() 单独记录，不覆盖实际权益曲线。
 
         同一时间戳覆盖而非追加，避免重复。
         """
         equity = self._cash + self._calc_position_value()
-        if bar is not None:
-            worst_equity = self._snapshot_worst_case_equity(bar)
-            if worst_equity < equity:
-                equity = worst_equity
         self._total_equity = equity
         if self.equity_curve and self.equity_curve[-1][0] == ts:
             self.equity_curve[-1] = (ts, equity)

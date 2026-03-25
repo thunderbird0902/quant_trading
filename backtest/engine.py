@@ -402,12 +402,19 @@ class BacktestEngine:
             logger.warning("strategy.on_order 异常: %s", e)
 
     def _on_trade(self, trade: TradeData) -> None:
-        """Broker 成交事件 → 策略 on_trade"""
+        """Broker 成交事件 → 策略 on_trade + on_position（持仓同步）"""
         self._trade_count += 1
         try:
             self.strategy.on_trade(trade)
         except Exception as e:
             logger.warning("strategy.on_trade 异常: %s", e)
+
+        try:
+            position = self.broker.get_position(trade.inst_id)
+            if position:
+                self.strategy.on_position(position)
+        except Exception as e:
+            logger.warning("strategy.on_position 异常: %s", e)
 
     # ─────────────────────── 强制平仓 ────────────────────────────
 
