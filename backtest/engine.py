@@ -63,13 +63,13 @@ class _BacktestStrategyEngine:
         self, strategy: BaseStrategy, inst_id: str,
         price: Decimal | None, qty: Decimal, order_type: OrderType,
     ) -> OrderData | None:
-        return self._submit(strategy, inst_id, OrderSide.SELL, price, qty, order_type)
+        return self._submit(strategy, inst_id, OrderSide.SELL, price, qty, order_type, PositionSide.SHORT)
 
     def _cover(
         self, strategy: BaseStrategy, inst_id: str,
         price: Decimal | None, qty: Decimal, order_type: OrderType,
     ) -> OrderData | None:
-        return self._submit(strategy, inst_id, OrderSide.BUY, price, qty, order_type)
+        return self._submit(strategy, inst_id, OrderSide.BUY, price, qty, order_type, PositionSide.SHORT)
 
     def _close_long(
         self, strategy: BaseStrategy, inst_id: str,
@@ -77,7 +77,7 @@ class _BacktestStrategyEngine:
     ) -> OrderData | None:
         # FIX: [新增，与 strategy_engine 接口保持一致]
         # 回测中平多 = 卖出（模拟器不区分 posSide，方向正确即可）
-        return self._submit(strategy, inst_id, OrderSide.SELL, price, qty, order_type)
+        return self._submit(strategy, inst_id, OrderSide.SELL, price, qty, order_type, PositionSide.LONG)
 
     def _close_short(
         self, strategy: BaseStrategy, inst_id: str,
@@ -85,11 +85,12 @@ class _BacktestStrategyEngine:
     ) -> OrderData | None:
         # FIX: [新增，与 strategy_engine 接口保持一致]
         # 回测中平空 = 买入
-        return self._submit(strategy, inst_id, OrderSide.BUY, price, qty, order_type)
+        return self._submit(strategy, inst_id, OrderSide.BUY, price, qty, order_type, PositionSide.SHORT)
 
     def _submit(
         self, strategy: BaseStrategy, inst_id: str,
         side: OrderSide, price: Decimal | None, qty: Decimal, order_type: OrderType,
+        position_side: PositionSide | None = None,
     ) -> OrderData | None:
         request = OrderRequest(
             inst_id=inst_id,
@@ -99,7 +100,7 @@ class _BacktestStrategyEngine:
             price=price if order_type != OrderType.MARKET else None,
             quantity=qty,
             margin_mode=MarginMode.CASH,
-            position_side=PositionSide.NET,
+            position_side=position_side,
         )
         try:
             return self._broker.send_order(request)
@@ -304,10 +305,10 @@ class BacktestEngine:
         )
 
         # [P1-4] on_init 期间只暴露 warmup 期间的数据（而非全量历史）
-        if self.warmup_bars > 0:
-            self._fake_engine._set_current_index(self.warmup_bars - 1)
-        else:
-            self._fake_engine._set_current_index(-1)
+        # FIX: 确保 on_init 期间 _current_bar_index = -1（空数据集），
+        # 防止策略通过 self.am.close 或 self.get_klines(limit=大数) 访问全量历史。
+        # 策略应在 on_start 或首根 on_bar 之后才加载完整历史。
+        self._fake_engine._set_current_index(-1)
 
         try:
             self.strategy.on_init()

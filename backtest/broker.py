@@ -702,6 +702,7 @@ class SimulatedBroker:
         pos_info["quantity"] = Decimal("0")
         pos_info["avg_price"] = Decimal("0")
         pos_info["frozen_margin"] = Decimal("0")
+        del self._positions[inst_id]
 
         order_id = f"FORCE-{uuid.uuid4().hex[:8].upper()}"
         trade = TradeData(
