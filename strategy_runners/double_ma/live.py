@@ -44,6 +44,7 @@ import argparse
 import logging
 import signal
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -204,6 +205,23 @@ def main() -> None:
     # ── 4. 连接 OKX，启动引擎 ─────────────────────────────────
     logger.info("连接 OKX...")
     engine.connect(Exchange.OKX)
+
+    # ── 4.1 启动 WebSocket（私有频道需要先启动才能订阅）────────
+    import threading
+    ws_thread = threading.Thread(
+        target=gateway.start_websocket,
+        daemon=True,
+        name="OKX-WebSocket",
+    )
+    ws_thread.start()
+    time.sleep(1)
+
+    # ── 4.2 订阅私有频道（订单、持仓、余额）──────────────────
+    gateway.subscribe_account()
+    gateway.subscribe_positions()
+    gateway.subscribe_orders()
+    gateway.subscribe_fills()
+
     risk_engine.start()
     strategy_engine.start()
     strategy_engine.start_strategy(strategy_name)
@@ -234,6 +252,7 @@ def main() -> None:
     # ── 7. 主线程等待 + 健康检查 ────────────────────────────
     _health_check_interval = 30
     _last_health_check = time.time()
+    _reconnect_lock = threading.Lock()
 
     while True:
         time.sleep(1)
@@ -245,15 +264,42 @@ def main() -> None:
 
         if not gateway.is_connected():
             logger.error("健康检查失败：Gateway 连接已断开！尝试重连...")
+            acquired = _reconnect_lock.acquire(timeout=10)
+            if not acquired:
+                logger.warning("重连正在进行中，跳过本次健康检查")
+                continue
             try:
+                try:
+                    strategy_engine.stop_strategy(strategy_name)
+                except Exception:
+                    pass
                 engine.disconnect(Exchange.OKX)
                 engine.connect(Exchange.OKX)
+
+                ws_thread = threading.Thread(
+                    target=gateway.start_websocket,
+                    daemon=True,
+                    name="OKX-WebSocket",
+                )
+                ws_thread.start()
+                time.sleep(1)
+
+                gateway.subscribe_account()
+                gateway.subscribe_positions()
+                gateway.subscribe_orders()
+                gateway.subscribe_fills()
+                gateway.subscribe_kline(args.inst_id, args.interval)
+
+                strategy_engine.start_strategy(strategy_name)
+
                 if gateway.is_connected():
                     logger.info("Gateway 重连成功")
                 else:
                     logger.error("Gateway 重连失败，系统可能以僵尸状态运行！")
             except Exception as exc:
                 logger.error("Gateway 重连异常: %s", exc)
+            finally:
+                _reconnect_lock.release()
 
 
 if __name__ == "__main__":

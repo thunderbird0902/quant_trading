@@ -133,6 +133,22 @@ class OKXGateway(BaseGateway):
     def subscribe_trades(self, inst_id: str) -> None:
         self._websocket.subscribe_trades(inst_id)
 
+    def subscribe_account(self) -> None:
+        """订阅账户余额变化（私有频道）。"""
+        self._websocket.subscribe_account()
+
+    def subscribe_positions(self, inst_type: str = "ANY") -> None:
+        """订阅持仓变化（私有频道）。"""
+        self._websocket.subscribe_positions(inst_type)
+
+    def subscribe_orders(self, inst_type: str = "ANY") -> None:
+        """订阅订单状态（私有频道）。"""
+        self._websocket.subscribe_orders(inst_type)
+
+    def subscribe_fills(self) -> None:
+        """订阅成交明细（私有频道）。"""
+        self._websocket.subscribe_fills()
+
     def start_websocket(self) -> None:
         """
         启动 WebSocket（非阻塞，需在异步环境调用 start_websocket_async）。
